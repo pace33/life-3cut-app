@@ -566,7 +566,7 @@ async function saveCompositePng() {
   const gap = 28;
   const photoWidth = width - margin * 2;
   const photoHeight = 520;
-  const titleHeight = 92;
+  const titleHeight = 124;
   const footerHeight = 92;
   const height = titleHeight + footerHeight + photoHeight * REQUIRED_SHOTS + gap * 2;
 
@@ -582,19 +582,19 @@ async function saveCompositePng() {
   ctx.fillStyle = background;
   ctx.fillRect(0, 0, width, height);
 
-  fillRoundedRect(ctx, 70, 26, 54, 54, 14, frame.logo);
+  fillRoundedRect(ctx, 70, 32, 54, 54, 14, frame.logo);
   ctx.fillStyle = state.frameStyle === "film" ? "#1f2937" : "#ffffff";
   ctx.font = '900 34px "Segoe UI", "Noto Sans KR", sans-serif';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("3", 97, 53);
+  ctx.fillText("3", 97, 59);
 
-  drawFittedText(ctx, currentTitle(), 144, 50, width - 210, 40, 25, 800, frame.title);
+  drawFittedText(ctx, currentTitle(), 144, 38, width - 210, 34, 20, 800, frame.title);
   ctx.fillStyle = frame.subtitle;
   ctx.font = '700 22px "Segoe UI", "Noto Sans KR", sans-serif';
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
-  ctx.fillText("오늘의 반짝이는 순간", 146, 78);
+  ctx.fillText("오늘의 반짝이는 순간", 146, 92);
 
   const images = await Promise.all(state.photos.map(loadImage));
 
@@ -706,7 +706,7 @@ function drawFittedText(ctx, text, x, y, maxWidth, maxSize, minSize, weight, col
   let size = maxSize;
   ctx.fillStyle = color;
   ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
+  ctx.textBaseline = "top";
 
   while (size > minSize) {
     ctx.font = `${weight} ${size}px "Segoe UI", "Noto Sans KR", sans-serif`;
