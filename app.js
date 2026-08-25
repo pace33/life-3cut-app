@@ -115,6 +115,30 @@ function currentTitle() {
 function syncTitleFromInput() {
   state.title = els.titleInput.value.trim();
   document.title = currentTitle();
+  fitTitleInput();
+}
+
+function fitTitleInput() {
+  const input = els.titleInput;
+  if (!input) return;
+
+  const text = input.value.trim() || DEFAULT_TITLE;
+  const availableWidth = Math.max(120, input.clientWidth - 18);
+  const smallScreen = window.matchMedia("(max-width: 620px)").matches;
+  const maxSize = smallScreen ? 24 : 32;
+  const minSize = smallScreen ? 17 : 20;
+  const canvas = fitTitleInput.canvas || document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  fitTitleInput.canvas = canvas;
+
+  let size = maxSize;
+  while (size > minSize) {
+    ctx.font = `900 ${size}px "Segoe UI", "Noto Sans KR", sans-serif`;
+    if (ctx.measureText(text).width <= availableWidth) break;
+    size -= 1;
+  }
+
+  input.style.fontSize = `${size}px`;
 }
 
 function wait(ms) {
@@ -745,5 +769,6 @@ els.stickerPalette.addEventListener("click", (event) => {
 });
 
 window.addEventListener("beforeunload", stopCamera);
+window.addEventListener("resize", fitTitleInput);
 syncTitleFromInput();
 renderThumbs();

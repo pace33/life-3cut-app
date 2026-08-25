@@ -103,8 +103,15 @@ button:disabled {
 
 .brand {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 14px;
+  min-width: 0;
+}
+
+.brand > div {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .brand-mark {
@@ -150,10 +157,13 @@ p {
 h1 {
   font-size: 2rem;
   line-height: 1.15;
+  max-width: min(760px, calc(100vw - 150px));
 }
 
 .title-input {
-  width: min(360px, 62vw);
+  display: block;
+  width: min(760px, calc(100vw - 150px));
+  max-width: 100%;
   min-height: 46px;
   margin: -4px 0 0;
   padding: 4px 8px;
@@ -164,6 +174,7 @@ h1 {
   font-size: 2rem;
   font-weight: 900;
   line-height: 1.15;
+  text-overflow: clip;
 }
 
 .title-input:hover,
@@ -856,7 +867,7 @@ h2 {
   }
 
   .title-input {
-    width: min(100%, 72vw);
+    width: min(100%, calc(100vw - 88px));
     min-height: 42px;
     font-size: 1.5rem;
   }
