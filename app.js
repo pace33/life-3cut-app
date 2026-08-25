@@ -1,6 +1,7 @@
 const REQUIRED_SHOTS = 3;
 const DEFAULT_STICKER_SIZE = 54;
 const DEFAULT_TITLE = "3컷 사진 놀이";
+const TITLE_STORAGE_KEY = `life-3cut-title:${window.location.pathname.replace(/\/index\.html$/, "/")}`;
 
 const PHOTO_EFFECTS = {
   bright: {
@@ -112,8 +113,30 @@ function currentTitle() {
   return state.title.trim() || DEFAULT_TITLE;
 }
 
+function loadSavedTitle() {
+  try {
+    const savedTitle = localStorage.getItem(TITLE_STORAGE_KEY);
+    if (savedTitle) els.titleInput.value = savedTitle;
+  } catch (error) {
+    // Some browsers block storage in private modes; the app still works without it.
+  }
+}
+
+function saveTitle() {
+  try {
+    if (state.title) {
+      localStorage.setItem(TITLE_STORAGE_KEY, state.title);
+    } else {
+      localStorage.removeItem(TITLE_STORAGE_KEY);
+    }
+  } catch (error) {
+    // Ignore storage failures so typing and PNG saving keep working.
+  }
+}
+
 function syncTitleFromInput() {
   state.title = els.titleInput.value.trim();
+  saveTitle();
   document.title = currentTitle();
   fitTitleInput();
 }
@@ -770,5 +793,6 @@ els.stickerPalette.addEventListener("click", (event) => {
 
 window.addEventListener("beforeunload", stopCamera);
 window.addEventListener("resize", fitTitleInput);
+loadSavedTitle();
 syncTitleFromInput();
 renderThumbs();
