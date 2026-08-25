@@ -152,6 +152,28 @@ h1 {
   line-height: 1.15;
 }
 
+.title-input {
+  width: min(360px, 62vw);
+  min-height: 46px;
+  margin: -4px 0 0;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--ink);
+  font-size: 2rem;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.title-input:hover,
+.title-input:focus {
+  border-color: rgba(67, 135, 232, 0.34);
+  background: white;
+  outline: 4px solid rgba(67, 135, 232, 0.16);
+  outline-offset: 2px;
+}
+
 h2 {
   font-size: 1.18rem;
   line-height: 1.2;
@@ -542,6 +564,27 @@ h2 {
   outline-offset: 2px;
 }
 
+.sticker.locked {
+  filter: drop-shadow(0 4px 8px rgba(31, 41, 55, 0.18));
+}
+
+.sticker.locked::after {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 900;
+  content: "✓";
+}
+
 .tools-panel {
   display: grid;
   gap: 18px;
@@ -557,7 +600,8 @@ h2 {
 }
 
 .cut-buttons,
-.tool-row {
+.tool-row,
+.effect-buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -565,6 +609,41 @@ h2 {
 
 .cut-buttons .button {
   flex: 1 1 90px;
+}
+
+.effect-buttons .button {
+  flex: 1 1 96px;
+}
+
+.effect-chip {
+  border-color: var(--line);
+  background: #f9fcfd;
+}
+
+.effect-chip.bright {
+  background: #fff6d9;
+  color: #5b4205;
+}
+
+.effect-chip.vivid {
+  background: #e9f2ff;
+  color: #1f528e;
+}
+
+.effect-chip.warm {
+  background: #fff0eb;
+  color: #8b3f30;
+}
+
+.effect-chip.mono {
+  background: #f0f2f5;
+  color: #303846;
+}
+
+.effect-chip.selected {
+  box-shadow:
+    inset 0 0 0 2px rgba(31, 41, 55, 0.16),
+    var(--shadow-soft);
 }
 
 .sticker-palette {
@@ -599,6 +678,136 @@ h2 {
   display: block;
   color: var(--muted);
   font-size: 1rem;
+}
+
+.frame-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(92px, 1fr));
+  gap: 10px;
+}
+
+.frame-choice {
+  display: grid;
+  min-height: 106px;
+  gap: 8px;
+  place-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  font-weight: 850;
+  box-shadow: var(--shadow-soft);
+}
+
+.frame-choice.selected,
+.frame-choice:focus-visible {
+  outline: 4px solid rgba(67, 135, 232, 0.28);
+  outline-offset: 2px;
+}
+
+.frame-preview {
+  display: grid;
+  width: 42px;
+  height: 58px;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 8px;
+}
+
+.frame-preview::before,
+.frame-preview::after,
+.frame-preview span {
+  display: block;
+  min-height: 0;
+  border-radius: 3px;
+  background: rgba(31, 41, 55, 0.16);
+  content: "";
+}
+
+.frame-preview.clean {
+  background: linear-gradient(180deg, #ffffff, #eef8f4);
+  box-shadow: inset 0 0 0 1px #bfd1dc;
+}
+
+.frame-preview.pastel {
+  background: linear-gradient(180deg, #fff2f7, #eef7ff);
+  box-shadow: inset 0 0 0 2px #ffd36b;
+}
+
+.frame-preview.film {
+  background: #222a35;
+  box-shadow: inset 0 0 0 2px #111827;
+}
+
+.photo-img.effect-bright {
+  filter: brightness(1.16) contrast(1.04) saturate(1.08);
+}
+
+.photo-img.effect-vivid {
+  filter: contrast(1.16) saturate(1.24);
+}
+
+.photo-img.effect-warm {
+  filter: sepia(0.18) saturate(1.16) brightness(1.05);
+}
+
+.photo-img.effect-mono {
+  filter: grayscale(1) contrast(1.08) brightness(1.05);
+}
+
+.photo-strip.frame-pastel {
+  background: linear-gradient(180deg, #fff8fb, #f4fbff);
+}
+
+.photo-strip.frame-pastel .strip-slot:nth-child(1) {
+  box-shadow: 0 0 0 2px #ff9ab4;
+}
+
+.photo-strip.frame-pastel .strip-slot:nth-child(2) {
+  box-shadow: 0 0 0 2px #ffd36b;
+}
+
+.photo-strip.frame-pastel .strip-slot:nth-child(3) {
+  box-shadow: 0 0 0 2px #76bf73;
+}
+
+.photo-strip.frame-film {
+  gap: 16px;
+  background: #222a35;
+}
+
+.photo-strip.frame-film .strip-slot {
+  border-color: #111827;
+  border-radius: 4px;
+  background: #111827;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.photo-strip.frame-film .strip-slot::before,
+.photo-strip.frame-film .strip-slot::after {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  z-index: 2;
+  width: 7px;
+  border-radius: 999px;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.72) 0 8px,
+      transparent 8px 18px
+    );
+  content: "";
+  pointer-events: none;
+}
+
+.photo-strip.frame-film .strip-slot::before {
+  left: 8px;
+}
+
+.photo-strip.frame-film .strip-slot::after {
+  right: 8px;
 }
 
 .final-actions {
@@ -646,6 +855,12 @@ h2 {
     font-size: 1.5rem;
   }
 
+  .title-input {
+    width: min(100%, 72vw);
+    min-height: 42px;
+    font-size: 1.5rem;
+  }
+
   h2 {
     font-size: 1.12rem;
   }
@@ -685,5 +900,9 @@ h2 {
 
   .sticker-palette {
     grid-template-columns: repeat(2, minmax(110px, 1fr));
+  }
+
+  .frame-buttons {
+    grid-template-columns: 1fr;
   }
 }

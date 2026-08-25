@@ -1,9 +1,72 @@
 const REQUIRED_SHOTS = 3;
 const DEFAULT_STICKER_SIZE = 54;
+const DEFAULT_TITLE = "3컷 사진 놀이";
+
+const PHOTO_EFFECTS = {
+  bright: {
+    label: "밝게",
+    css: "effect-bright",
+    canvas: "brightness(1.16) contrast(1.04) saturate(1.08)",
+  },
+  vivid: {
+    label: "선명",
+    css: "effect-vivid",
+    canvas: "contrast(1.16) saturate(1.24)",
+  },
+  warm: {
+    label: "따뜻",
+    css: "effect-warm",
+    canvas: "sepia(0.18) saturate(1.16) brightness(1.05)",
+  },
+  mono: {
+    label: "흑백",
+    css: "effect-mono",
+    canvas: "grayscale(1) contrast(1.08) brightness(1.05)",
+  },
+};
+
+const FRAME_STYLES = {
+  clean: {
+    label: "깔끔",
+    background: ["#f7fbff", "#eef8f4", "#fff7e6"],
+    logo: "#167d73",
+    title: "#1f2937",
+    subtitle: "#627083",
+    card: "#ffffff",
+    border: ["#167d73", "#4387e8", "#f06d68"],
+    radius: 22,
+    photoRadius: 18,
+  },
+  pastel: {
+    label: "파스텔",
+    background: ["#fff8fb", "#f4fbff", "#fff8df"],
+    logo: "#d66f91",
+    title: "#2b3342",
+    subtitle: "#7a6272",
+    card: "#fffafd",
+    border: ["#ff9ab4", "#ffd36b", "#76bf73"],
+    radius: 28,
+    photoRadius: 22,
+  },
+  film: {
+    label: "필름",
+    background: ["#2a3038", "#1f2937", "#151a21"],
+    logo: "#ffd36b",
+    title: "#f8fafc",
+    subtitle: "#d4dde8",
+    card: "#0f1720",
+    border: ["#f8fafc", "#d4dde8", "#f8fafc"],
+    radius: 10,
+    photoRadius: 6,
+  },
+};
 
 const state = {
   stream: null,
   photos: [],
+  photoEffects: Array(REQUIRED_SHOTS).fill(""),
+  frameStyle: "clean",
+  title: DEFAULT_TITLE,
   selectedCut: 0,
   selectedStickerId: null,
   stickers: [],
@@ -12,6 +75,7 @@ const state = {
 };
 
 const els = {
+  titleInput: document.querySelector("#titleInput"),
   cameraScreen: document.querySelector("#cameraScreen"),
   editorScreen: document.querySelector("#editorScreen"),
   progressText: document.querySelector("#progressText"),
@@ -26,6 +90,8 @@ const els = {
   captureNote: document.querySelector("#captureNote"),
   photoStrip: document.querySelector("#photoStrip"),
   cutButtons: document.querySelector("#cutButtons"),
+  effectButtons: document.querySelector("#effectButtons"),
+  frameButtons: document.querySelector("#frameButtons"),
   stickerPalette: document.querySelector("#stickerPalette"),
   smallerStickerButton: document.querySelector("#smallerStickerButton"),
   biggerStickerButton: document.querySelector("#biggerStickerButton"),
@@ -40,6 +106,15 @@ function setStatus(message) {
 
 function setProgress(message) {
   els.progressText.textContent = message;
+}
+
+function currentTitle() {
+  return state.title.trim() || DEFAULT_TITLE;
+}
+
+function syncTitleFromInput() {
+  state.title = els.titleInput.value.trim();
+  document.title = currentTitle();
 }
 
 function wait(ms) {
@@ -187,11 +262,14 @@ function openCamera() {
 
 function renderEditor() {
   const stripSlots = [...els.photoStrip.querySelectorAll(".strip-slot")];
+  els.photoStrip.classList.remove("frame-clean", "frame-pastel", "frame-film");
+  els.photoStrip.classList.add(`frame-${state.frameStyle}`);
 
   stripSlots.forEach((slot, cut) => {
     slot.classList.toggle("selected", cut === state.selectedCut);
     const image = slot.querySelector("img");
     image.src = state.photos[cut];
+    image.className = `photo-img ${PHOTO_EFFECTS[state.photoEffects[cut]]?.css || ""}`.trim();
 
     const layer = slot.querySelector(".sticker-layer");
     layer.textContent = "";
@@ -206,7 +284,42 @@ function renderEditor() {
     button.setAttribute("aria-pressed", String(cut === state.selectedCut));
   });
 
-  els.editorStatus.textContent = `${state.selectedCut + 1}번 사진 선택됨`;
+  renderEffectButtons();
+  renderFrameButtons();
+
+  const effectLabel = PHOTO_EFFECTS[state.photoEffects[state.selectedCut]]?.label || "보정 없음";
+  const frameLabel = FRAME_STYLES[state.frameStyle]?.label || "깔끔";
+  els.editorStatus.textContent = `${state.selectedCut + 1}번 사진 · ${effectLabel} · ${frameLabel} 사진틀`;
+}
+
+function renderEffectButtons() {
+  const selectedEffect = state.photoEffects[state.selectedCut];
+
+  [...els.effectButtons.querySelectorAll("[data-effect]")].forEach((button) => {
+    const isSelected = button.dataset.effect === selectedEffect;
+    button.classList.toggle("selected", isSelected);
+    button.setAttribute("aria-pressed", String(isSelected));
+  });
+}
+
+function renderFrameButtons() {
+  [...els.frameButtons.querySelectorAll("[data-frame]")].forEach((button) => {
+    const isSelected = button.dataset.frame === state.frameStyle;
+    button.classList.toggle("selected", isSelected);
+    button.setAttribute("aria-pressed", String(isSelected));
+  });
+}
+
+function setPhotoEffect(effect) {
+  state.photoEffects[state.selectedCut] =
+    state.photoEffects[state.selectedCut] === effect ? "" : effect;
+  renderEditor();
+}
+
+function selectFrame(frameStyle) {
+  if (!FRAME_STYLES[frameStyle]) return;
+  state.frameStyle = frameStyle;
+  renderEditor();
 }
 
 function createStickerElement(sticker) {
@@ -218,8 +331,10 @@ function createStickerElement(sticker) {
   button.style.left = `${sticker.x}%`;
   button.style.top = `${sticker.y}%`;
   button.style.fontSize = `${sticker.size}px`;
-  button.setAttribute("aria-label", `${sticker.emoji} 스티커`);
+  button.setAttribute("aria-label", `${sticker.emoji} 스티커${sticker.locked ? ", 고정됨" : ""}`);
+  button.title = sticker.locked ? "고정됨" : "다시 누르면 고정";
   button.classList.toggle("selected", sticker.id === state.selectedStickerId);
+  button.classList.toggle("locked", sticker.locked);
 
   button.addEventListener("pointerdown", startStickerDrag);
   button.addEventListener("focus", () => selectSticker(sticker.id));
@@ -253,6 +368,7 @@ function addSticker(emoji) {
     x: clamp(50 + offset - 12, 12, 88),
     y: clamp(50 + offset - 12, 12, 88),
     size: DEFAULT_STICKER_SIZE,
+    locked: false,
   };
 
   state.nextStickerId += 1;
@@ -268,26 +384,71 @@ function startStickerDrag(event) {
   if (event.button !== 0 && event.pointerType === "mouse") return;
   event.preventDefault();
 
+  const target = event.currentTarget;
   const stickerId = Number(event.currentTarget.dataset.stickerId);
-  selectSticker(stickerId);
-  event.currentTarget.setPointerCapture(event.pointerId);
-  moveStickerToPointer(stickerId, event);
+  const sticker = state.stickers.find((item) => item.id === stickerId);
+  if (!sticker) return;
 
-  const move = (moveEvent) => moveStickerToPointer(stickerId, moveEvent);
-  const finish = () => {
-    event.currentTarget.removeEventListener("pointermove", move);
-    event.currentTarget.removeEventListener("pointerup", finish);
-    event.currentTarget.removeEventListener("pointercancel", finish);
+  const wasSelected = state.selectedStickerId === stickerId;
+  const startX = event.clientX;
+  const startY = event.clientY;
+  let didMove = false;
+
+  selectSticker(stickerId);
+  target.setPointerCapture(event.pointerId);
+
+  const move = (moveEvent) => {
+    const distance = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
+    if (distance < 5 || sticker.locked) return;
+    didMove = true;
+    moveStickerToPointer(stickerId, moveEvent);
   };
 
-  event.currentTarget.addEventListener("pointermove", move);
-  event.currentTarget.addEventListener("pointerup", finish);
-  event.currentTarget.addEventListener("pointercancel", finish);
+  const finish = () => {
+    target.removeEventListener("pointermove", move);
+    target.removeEventListener("pointerup", finish);
+    target.removeEventListener("pointercancel", finish);
+
+    if (!didMove) {
+      toggleStickerLock(stickerId, wasSelected);
+      return;
+    }
+
+    els.editorStatus.textContent = "스티커 위치를 옮겼어요";
+  };
+
+  target.addEventListener("pointermove", move);
+  target.addEventListener("pointerup", finish);
+  target.addEventListener("pointercancel", finish);
+}
+
+function toggleStickerLock(stickerId, wasSelected = true) {
+  const sticker = state.stickers.find((item) => item.id === stickerId);
+  if (!sticker) return;
+
+  if (sticker.locked) {
+    sticker.locked = false;
+    state.selectedStickerId = sticker.id;
+    renderEditor();
+    els.editorStatus.textContent = "스티커 고정을 풀었어요";
+    return;
+  }
+
+  if (wasSelected) {
+    sticker.locked = true;
+    state.selectedStickerId = null;
+    renderEditor();
+    els.editorStatus.textContent = "스티커를 고정했어요";
+    return;
+  }
+
+  state.selectedStickerId = sticker.id;
+  renderEditor();
 }
 
 function moveStickerToPointer(stickerId, event) {
   const sticker = state.stickers.find((item) => item.id === stickerId);
-  if (!sticker) return;
+  if (!sticker || sticker.locked) return;
 
   const slot = event.currentTarget.closest(".strip-slot");
   const rect = slot.getBoundingClientRect();
@@ -311,8 +472,19 @@ function handleStickerKeyboard(event) {
     ArrowRight: [step, 0],
   };
 
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    toggleStickerLock(stickerId, true);
+    return;
+  }
+
   if (keyMoves[event.key]) {
     event.preventDefault();
+    if (sticker.locked) {
+      els.editorStatus.textContent = "고정된 스티커예요";
+      return;
+    }
+
     const [dx, dy] = keyMoves[event.key];
     sticker.x = clamp(sticker.x + dx, 5, 95);
     sticker.y = clamp(sticker.y + dy, 5, 95);
@@ -348,6 +520,7 @@ function deleteSelectedSticker() {
 function resetAll() {
   stopCamera();
   state.photos = [];
+  state.photoEffects = Array(REQUIRED_SHOTS).fill("");
   state.stickers = [];
   state.selectedCut = 0;
   state.selectedStickerId = null;
@@ -376,27 +549,27 @@ async function saveCompositePng() {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
+  const frame = FRAME_STYLES[state.frameStyle] || FRAME_STYLES.clean;
 
   const background = ctx.createLinearGradient(0, 0, 0, height);
-  background.addColorStop(0, "#f7fbff");
-  background.addColorStop(0.58, "#eef8f4");
-  background.addColorStop(1, "#fff7e6");
+  background.addColorStop(0, frame.background[0]);
+  background.addColorStop(0.58, frame.background[1]);
+  background.addColorStop(1, frame.background[2]);
   ctx.fillStyle = background;
   ctx.fillRect(0, 0, width, height);
 
-  fillRoundedRect(ctx, 70, 26, 54, 54, 14, "#167d73");
-  ctx.fillStyle = "#ffffff";
+  fillRoundedRect(ctx, 70, 26, 54, 54, 14, frame.logo);
+  ctx.fillStyle = state.frameStyle === "film" ? "#1f2937" : "#ffffff";
   ctx.font = '900 34px "Segoe UI", "Noto Sans KR", sans-serif';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText("3", 97, 53);
 
-  ctx.fillStyle = "#1f2937";
-  ctx.font = '800 40px "Segoe UI", "Noto Sans KR", sans-serif';
-  ctx.textAlign = "left";
-  ctx.fillText("3컷 사진 놀이", 144, 50);
-  ctx.fillStyle = "#627083";
+  drawFittedText(ctx, currentTitle(), 144, 50, width - 210, 40, 25, 800, frame.title);
+  ctx.fillStyle = frame.subtitle;
   ctx.font = '700 22px "Segoe UI", "Noto Sans KR", sans-serif';
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
   ctx.fillText("오늘의 반짝이는 순간", 146, 78);
 
   const images = await Promise.all(state.photos.map(loadImage));
@@ -409,19 +582,25 @@ async function saveCompositePng() {
     ctx.shadowColor = "rgba(31, 41, 55, 0.16)";
     ctx.shadowBlur = 26;
     ctx.shadowOffsetY = 12;
-    fillRoundedRect(ctx, x - 16, y - 16, photoWidth + 32, photoHeight + 32, 26, "#ffffff");
+    fillRoundedRect(ctx, x - 16, y - 16, photoWidth + 32, photoHeight + 32, frame.radius, frame.card);
     ctx.restore();
 
     ctx.save();
-    roundedRectPath(ctx, x, y, photoWidth, photoHeight, 18);
+    roundedRectPath(ctx, x, y, photoWidth, photoHeight, frame.photoRadius);
     ctx.clip();
+    ctx.filter = PHOTO_EFFECTS[state.photoEffects[cut]]?.canvas || "none";
     drawImageCover(ctx, image, x, y, photoWidth, photoHeight);
+    ctx.filter = "none";
     ctx.restore();
 
-    ctx.strokeStyle = ["#167d73", "#4387e8", "#f06d68"][cut];
+    ctx.strokeStyle = frame.border[cut];
     ctx.lineWidth = 8;
-    roundedRectPath(ctx, x - 4, y - 4, photoWidth + 8, photoHeight + 8, 22);
+    roundedRectPath(ctx, x - 4, y - 4, photoWidth + 8, photoHeight + 8, frame.radius);
     ctx.stroke();
+
+    if (state.frameStyle === "film") {
+      drawFilmPerforations(ctx, x, y, photoWidth, photoHeight);
+    }
 
     state.stickers
       .filter((sticker) => sticker.cut === cut)
@@ -437,14 +616,15 @@ async function saveCompositePng() {
       });
   });
 
-  ctx.fillStyle = "#1f2937";
+  ctx.fillStyle = frame.title;
   ctx.font = '800 27px "Segoe UI", "Noto Sans KR", sans-serif';
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
   ctx.fillText("함께 웃은 3개의 장면", width / 2, height - 45);
 
   const link = document.createElement("a");
-  link.download = `3cut-photo-${new Date().toISOString().slice(0, 10)}.png`;
+  const fileTitle = currentTitle().replace(/[\\/:*?"<>|]/g, "").trim() || "3cut-photo";
+  link.download = `${fileTitle}-${new Date().toISOString().slice(0, 10)}.png`;
   link.href = canvas.toDataURL("image/png");
   link.click();
 }
@@ -498,10 +678,38 @@ function fillRoundedRect(ctx, x, y, width, height, radius, color) {
   ctx.fill();
 }
 
+function drawFittedText(ctx, text, x, y, maxWidth, maxSize, minSize, weight, color) {
+  let size = maxSize;
+  ctx.fillStyle = color;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+
+  while (size > minSize) {
+    ctx.font = `${weight} ${size}px "Segoe UI", "Noto Sans KR", sans-serif`;
+    if (ctx.measureText(text).width <= maxWidth) break;
+    size -= 2;
+  }
+
+  ctx.fillText(text, x, y, maxWidth);
+}
+
+function drawFilmPerforations(ctx, x, y, width, height) {
+  ctx.save();
+  ctx.fillStyle = "rgba(255, 255, 255, 0.72)";
+
+  for (let dotY = y + 22; dotY < y + height - 18; dotY += 34) {
+    fillRoundedRect(ctx, x + 14, dotY, 10, 17, 5, "rgba(255, 255, 255, 0.72)");
+    fillRoundedRect(ctx, x + width - 24, dotY, 10, 17, 5, "rgba(255, 255, 255, 0.72)");
+  }
+
+  ctx.restore();
+}
+
 els.startCameraButton.addEventListener("click", startCamera);
 els.takePhotoButton.addEventListener("click", runCountdownAndCapture);
 els.retakeButton.addEventListener("click", resetAll);
 els.saveButton.addEventListener("click", saveCompositePng);
+els.titleInput.addEventListener("input", syncTitleFromInput);
 els.smallerStickerButton.addEventListener("click", () => resizeSelectedSticker(-8));
 els.biggerStickerButton.addEventListener("click", () => resizeSelectedSticker(8));
 els.deleteStickerButton.addEventListener("click", deleteSelectedSticker);
@@ -518,6 +726,18 @@ els.cutButtons.addEventListener("click", (event) => {
   selectCut(Number(button.dataset.cutButton));
 });
 
+els.effectButtons.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-effect]");
+  if (!button) return;
+  setPhotoEffect(button.dataset.effect);
+});
+
+els.frameButtons.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-frame]");
+  if (!button) return;
+  selectFrame(button.dataset.frame);
+});
+
 els.stickerPalette.addEventListener("click", (event) => {
   const button = event.target.closest("[data-sticker]");
   if (!button) return;
@@ -525,4 +745,5 @@ els.stickerPalette.addEventListener("click", (event) => {
 });
 
 window.addEventListener("beforeunload", stopCamera);
+syncTitleFromInput();
 renderThumbs();

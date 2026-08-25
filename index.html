@@ -18,7 +18,16 @@
         <div class="brand">
           <span class="brand-mark" aria-hidden="true">3</span>
           <div>
-            <h1>3컷 사진 놀이</h1>
+            <h1>
+              <input
+                class="title-input"
+                id="titleInput"
+                type="text"
+                value="3컷 사진 놀이"
+                maxlength="18"
+                aria-label="사진 이름"
+              />
+            </h1>
             <p>쉽게 찍고, 예쁘게 꾸며요</p>
           </div>
         </div>
@@ -111,6 +120,34 @@
                 <button class="sticker-choice" type="button" data-sticker="😊" aria-label="웃는 얼굴 스티커">😊<span>웃음</span></button>
                 <button class="sticker-choice" type="button" data-sticker="🌈" aria-label="무지개 스티커">🌈<span>무지개</span></button>
                 <button class="sticker-choice" type="button" data-sticker="🎈" aria-label="풍선 스티커">🎈<span>풍선</span></button>
+              </div>
+            </div>
+
+            <div class="tool-group">
+              <h2>사진 보정</h2>
+              <div class="effect-buttons" id="effectButtons">
+                <button class="button small effect-chip bright" type="button" data-effect="bright">밝게</button>
+                <button class="button small effect-chip vivid" type="button" data-effect="vivid">선명</button>
+                <button class="button small effect-chip warm" type="button" data-effect="warm">따뜻</button>
+                <button class="button small effect-chip mono" type="button" data-effect="mono">흑백</button>
+              </div>
+            </div>
+
+            <div class="tool-group">
+              <h2>사진틀</h2>
+              <div class="frame-buttons" id="frameButtons">
+                <button class="frame-choice selected" type="button" data-frame="clean" aria-label="깔끔 사진틀">
+                  <span class="frame-preview clean" aria-hidden="true"></span>
+                  <strong>깔끔</strong>
+                </button>
+                <button class="frame-choice" type="button" data-frame="pastel" aria-label="파스텔 사진틀">
+                  <span class="frame-preview pastel" aria-hidden="true"></span>
+                  <strong>파스텔</strong>
+                </button>
+                <button class="frame-choice" type="button" data-frame="film" aria-label="필름 사진틀">
+                  <span class="frame-preview film" aria-hidden="true"></span>
+                  <strong>필름</strong>
+                </button>
               </div>
             </div>
 
