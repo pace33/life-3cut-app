@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="특수학교 초등학생을 위한 쉬운 3컷 사진 촬영 웹 앱"
+    />
+    <title>3컷 사진 놀이</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">사진 놀이 바로가기</a>
+
+    <main class="app-shell" id="main">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">3</span>
+          <div>
+            <h1>3컷 사진 놀이</h1>
+            <p>쉽게 찍고, 예쁘게 꾸며요</p>
+          </div>
+        </div>
+        <div class="progress-pill" id="progressText" aria-live="polite">
+          준비
+        </div>
+      </header>
+
+      <section class="screen screen-active" id="cameraScreen" aria-labelledby="cameraTitle">
+        <div class="camera-area">
+          <div class="section-heading">
+            <h2 id="cameraTitle">사진 찍기</h2>
+            <span id="cameraStatus" aria-live="polite">카메라를 켜 주세요</span>
+          </div>
+
+          <div class="preview-frame">
+            <video id="cameraPreview" autoplay playsinline muted></video>
+            <div class="preview-placeholder" id="previewPlaceholder">
+              <span class="placeholder-camera" aria-hidden="true"></span>
+              <strong>큰 버튼을 눌러 시작해요</strong>
+            </div>
+            <div class="countdown" id="countdown" aria-live="assertive"></div>
+          </div>
+
+          <div class="big-actions">
+            <button class="button primary" id="startCameraButton" type="button">
+              <span class="button-icon camera-icon" aria-hidden="true"></span>
+              카메라 시작
+            </button>
+            <button class="button coral" id="takePhotoButton" type="button" disabled>
+              <span class="button-icon shutter-icon" aria-hidden="true"></span>
+              3초 뒤 촬영
+            </button>
+          </div>
+        </div>
+
+        <aside class="shot-list" aria-label="찍은 사진">
+          <h2>찍은 사진</h2>
+          <div class="thumb-grid" id="thumbGrid">
+            <div class="thumb-slot" data-index="0">1</div>
+            <div class="thumb-slot" data-index="1">2</div>
+            <div class="thumb-slot" data-index="2">3</div>
+          </div>
+          <p class="soft-note" id="captureNote">
+            모두 3장을 찍으면 꾸미기 화면이 열려요.
+          </p>
+        </aside>
+      </section>
+
+      <section class="screen editor-screen" id="editorScreen" aria-labelledby="editorTitle" hidden>
+        <div class="editor-layout">
+          <div class="photo-strip-wrap">
+            <div class="section-heading">
+              <h2 id="editorTitle">꾸미기</h2>
+              <span id="editorStatus" aria-live="polite">1번 사진 선택됨</span>
+            </div>
+
+            <div class="photo-strip" id="photoStrip" aria-label="세로형 3컷 사진 프레임">
+              <button class="strip-slot selected" type="button" data-cut="0" aria-label="1번 사진 선택">
+                <img alt="1번 사진" />
+                <span class="sticker-layer" data-layer="0"></span>
+              </button>
+              <button class="strip-slot" type="button" data-cut="1" aria-label="2번 사진 선택">
+                <img alt="2번 사진" />
+                <span class="sticker-layer" data-layer="1"></span>
+              </button>
+              <button class="strip-slot" type="button" data-cut="2" aria-label="3번 사진 선택">
+                <img alt="3번 사진" />
+                <span class="sticker-layer" data-layer="2"></span>
+              </button>
+            </div>
+          </div>
+
+          <aside class="tools-panel" aria-label="꾸미기 도구">
+            <div class="tool-group">
+              <h2>사진 고르기</h2>
+              <div class="cut-buttons" id="cutButtons">
+                <button class="button small selected" type="button" data-cut-button="0">1번</button>
+                <button class="button small" type="button" data-cut-button="1">2번</button>
+                <button class="button small" type="button" data-cut-button="2">3번</button>
+              </div>
+            </div>
+
+            <div class="tool-group">
+              <h2>스티커</h2>
+              <div class="sticker-palette" id="stickerPalette">
+                <button class="sticker-choice" type="button" data-sticker="⭐" aria-label="별 스티커">⭐<span>별</span></button>
+                <button class="sticker-choice" type="button" data-sticker="💖" aria-label="하트 스티커">💖<span>하트</span></button>
+                <button class="sticker-choice" type="button" data-sticker="🌸" aria-label="꽃 스티커">🌸<span>꽃</span></button>
+                <button class="sticker-choice" type="button" data-sticker="😊" aria-label="웃는 얼굴 스티커">😊<span>웃음</span></button>
+                <button class="sticker-choice" type="button" data-sticker="🌈" aria-label="무지개 스티커">🌈<span>무지개</span></button>
+                <button class="sticker-choice" type="button" data-sticker="🎈" aria-label="풍선 스티커">🎈<span>풍선</span></button>
+              </div>
+            </div>
+
+            <div class="tool-group">
+              <h2>스티커 크기</h2>
+              <div class="tool-row">
+                <button class="button small" id="smallerStickerButton" type="button">작게</button>
+                <button class="button small" id="biggerStickerButton" type="button">크게</button>
+                <button class="button small danger" id="deleteStickerButton" type="button">지우기</button>
+              </div>
+            </div>
+
+            <div class="tool-group final-actions">
+              <button class="button primary" id="saveButton" type="button">
+                <span aria-hidden="true">⬇</span>
+                PNG 저장
+              </button>
+              <button class="button secondary" id="retakeButton" type="button">
+                <span aria-hidden="true">↺</span>
+                다시 찍기
+              </button>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
