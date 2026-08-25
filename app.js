@@ -644,7 +644,7 @@ async function saveCompositePng() {
   ctx.font = '800 27px "Segoe UI", "Noto Sans KR", sans-serif';
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
-  ctx.fillText("함께 웃은 3개의 장면", width / 2, height - 45);
+  ctx.fillText("2026 이은 E-페스티벌", width / 2, height - 45);
 
   const link = document.createElement("a");
   const fileTitle = currentTitle().replace(/[\\/:*?"<>|]/g, "").trim() || "3cut-photo";
