@@ -1,6 +1,7 @@
 const REQUIRED_SHOTS = 3;
 const DEFAULT_STICKER_SIZE = 54;
 const DEFAULT_TITLE = "이은 e페스티벌 방명록";
+const FESTIVAL_HEADER_SRC = "./e-festival-header.png";
 const SCHOOL_LOGO_SRC = "./eeun-school-logo.png";
 const OLD_DEFAULT_TITLES = new Set(["3컷 사진 놀이", "이은학교"]);
 const TITLE_STORAGE_KEY = `life-3cut-title:${window.location.pathname.replace(/\/index\.html$/, "/")}`;
@@ -595,15 +596,16 @@ async function saveCompositePng() {
   const gap = 28;
   const photoWidth = width - margin * 2;
   const photoHeight = 520;
-  const titleHeight = 124;
-  const footerHeight = 92;
+  const titleHeight = 275;
+  const footerHeight = 120;
   const height = titleHeight + footerHeight + photoHeight * REQUIRED_SHOTS + gap * 2;
 
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   const frame = FRAME_STYLES[state.frameStyle] || FRAME_STYLES.clean;
-  const [schoolLogo, ...images] = await Promise.all([
+  const [festivalHeader, schoolLogo, ...images] = await Promise.all([
+    loadOptionalImage(FESTIVAL_HEADER_SRC),
     loadOptionalImage(SCHOOL_LOGO_SRC),
     ...state.photos.map(loadImage),
   ]);
@@ -615,8 +617,8 @@ async function saveCompositePng() {
   ctx.fillStyle = background;
   ctx.fillRect(0, 0, width, height);
 
-  if (schoolLogo) {
-    drawImageContain(ctx, schoolLogo, width / 2, 22, 250, 82);
+  if (festivalHeader) {
+    drawImageContain(ctx, festivalHeader, width / 2, 18, 430, 235);
   }
 
   images.forEach((image, cut) => {
@@ -661,11 +663,9 @@ async function saveCompositePng() {
       });
   });
 
-  ctx.fillStyle = frame.title;
-  ctx.font = '800 27px "Segoe UI", "Noto Sans KR", sans-serif';
-  ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
-  ctx.fillText("2026 이은 E-페스티벌", width / 2, height - 45);
+  if (schoolLogo) {
+    drawImageContain(ctx, schoolLogo, width / 2, height - footerHeight + 22, 210, 76);
+  }
 
   const link = document.createElement("a");
   const fileTitle = currentTitle().replace(/[\\/:*?"<>|]/g, "").trim() || "3cut-photo";
