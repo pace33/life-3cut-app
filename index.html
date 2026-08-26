@@ -8,6 +8,14 @@
       content="특수학교 초등학생을 위한 쉬운 3컷 사진 촬영 웹 앱"
     />
     <title>3컷 사진 놀이</title>
+    <script>
+      if (
+        location.hostname === "pace33.github.io" &&
+        location.pathname.startsWith("/pic/7/")
+      ) {
+        location.replace(`https://aiedue.ddns.net${location.pathname}${location.search}${location.hash}`);
+      }
+    </script>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
