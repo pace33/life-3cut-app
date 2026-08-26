@@ -109,6 +109,16 @@ button:disabled {
   min-width: 0;
 }
 
+.brand-logo-only {
+  flex: 0 1 auto;
+}
+
+.school-logo {
+  display: block;
+  width: min(216px, 52vw);
+  height: auto;
+}
+
 .brand > div {
   flex: 1 1 auto;
   min-width: 0;
@@ -860,6 +870,10 @@ h2 {
     width: 52px;
     height: 52px;
     font-size: 1.7rem;
+  }
+
+  .school-logo {
+    width: min(178px, 58vw);
   }
 
   h1 {

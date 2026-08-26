@@ -1,6 +1,7 @@
 const REQUIRED_SHOTS = 3;
 const DEFAULT_STICKER_SIZE = 54;
 const DEFAULT_TITLE = "3컷 사진 놀이";
+const SCHOOL_LOGO_SRC = "./eeun-school-logo.png";
 const TITLE_STORAGE_KEY = `life-3cut-title:${window.location.pathname.replace(/\/index\.html$/, "/")}`;
 
 const PHOTO_EFFECTS = {
@@ -597,6 +598,10 @@ async function saveCompositePng() {
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   const frame = FRAME_STYLES[state.frameStyle] || FRAME_STYLES.clean;
+  const [schoolLogo, ...images] = await Promise.all([
+    loadOptionalImage(SCHOOL_LOGO_SRC),
+    ...state.photos.map(loadImage),
+  ]);
 
   const background = ctx.createLinearGradient(0, 0, 0, height);
   background.addColorStop(0, frame.background[0]);
@@ -605,21 +610,9 @@ async function saveCompositePng() {
   ctx.fillStyle = background;
   ctx.fillRect(0, 0, width, height);
 
-  fillRoundedRect(ctx, 70, 32, 54, 54, 14, frame.logo);
-  ctx.fillStyle = state.frameStyle === "film" ? "#1f2937" : "#ffffff";
-  ctx.font = '900 34px "Segoe UI", "Noto Sans KR", sans-serif';
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("3", 97, 59);
-
-  drawFittedText(ctx, currentTitle(), 144, 38, width - 210, 34, 20, 800, frame.title);
-  ctx.fillStyle = frame.subtitle;
-  ctx.font = '700 22px "Segoe UI", "Noto Sans KR", sans-serif';
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-  ctx.fillText("오늘의 반짝이는 순간", 146, 92);
-
-  const images = await Promise.all(state.photos.map(loadImage));
+  if (schoolLogo) {
+    drawImageContain(ctx, schoolLogo, width / 2, 22, 250, 82);
+  }
 
   images.forEach((image, cut) => {
     const x = margin;
@@ -685,6 +678,10 @@ function loadImage(src) {
   });
 }
 
+function loadOptionalImage(src) {
+  return loadImage(src).catch(() => null);
+}
+
 function drawImageCover(ctx, image, x, y, width, height) {
   const imageRatio = image.width / image.height;
   const targetRatio = width / height;
@@ -702,6 +699,23 @@ function drawImageCover(ctx, image, x, y, width, height) {
   }
 
   ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
+}
+
+function drawImageContain(ctx, image, centerX, y, maxWidth, maxHeight) {
+  const imageRatio = image.width / image.height;
+  let drawWidth = maxWidth;
+  let drawHeight = drawWidth / imageRatio;
+
+  if (drawHeight > maxHeight) {
+    drawHeight = maxHeight;
+    drawWidth = drawHeight * imageRatio;
+  }
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(image, centerX - drawWidth / 2, y + (maxHeight - drawHeight) / 2, drawWidth, drawHeight);
+  ctx.restore();
 }
 
 function roundedRectPath(ctx, x, y, width, height, radius) {
