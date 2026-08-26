@@ -1,8 +1,8 @@
 const REQUIRED_SHOTS = 3;
 const DEFAULT_STICKER_SIZE = 54;
 const DEFAULT_TITLE = "이은 e페스티벌 방명록";
-const FESTIVAL_HEADER_SRC = "./e-festival-header.png";
-const SCHOOL_LOGO_SRC = "./eeun-school-logo.png";
+const FESTIVAL_HEADER_SRC = "./e-festival-header-transparent.png";
+const SCHOOL_LOGO_SRC = "./eeun-school-logo-transparent.png";
 const OLD_DEFAULT_TITLES = new Set(["3컷 사진 놀이", "이은학교"]);
 const TITLE_STORAGE_KEY = `life-3cut-title:${window.location.pathname.replace(/\/index\.html$/, "/")}`;
 
@@ -618,7 +618,7 @@ async function saveCompositePng() {
   ctx.fillRect(0, 0, width, height);
 
   if (festivalHeader) {
-    drawImageContain(ctx, festivalHeader, width / 2, 18, 430, 235);
+    drawImageContain(ctx, festivalHeader, width / 2, 18, 430, 235, true);
   }
 
   images.forEach((image, cut) => {
@@ -664,7 +664,7 @@ async function saveCompositePng() {
   });
 
   if (schoolLogo) {
-    drawImageContain(ctx, schoolLogo, width / 2, height - footerHeight + 22, 210, 76);
+    drawImageContain(ctx, schoolLogo, width / 2, height - footerHeight + 22, 210, 76, true);
   }
 
   const link = document.createElement("a");
@@ -706,7 +706,7 @@ function drawImageCover(ctx, image, x, y, width, height) {
   ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
 }
 
-function drawImageContain(ctx, image, centerX, y, maxWidth, maxHeight) {
+function drawImageContain(ctx, image, centerX, y, maxWidth, maxHeight, glow = false) {
   const imageRatio = image.width / image.height;
   let drawWidth = maxWidth;
   let drawHeight = drawWidth / imageRatio;
@@ -719,6 +719,12 @@ function drawImageContain(ctx, image, centerX, y, maxWidth, maxHeight) {
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
+  if (glow) {
+    ctx.shadowColor = "rgba(255, 255, 255, 0.72)";
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+  }
   ctx.drawImage(image, centerX - drawWidth / 2, y + (maxHeight - drawHeight) / 2, drawWidth, drawHeight);
   ctx.restore();
 }
