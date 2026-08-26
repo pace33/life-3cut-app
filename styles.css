@@ -114,6 +114,14 @@ button:disabled {
   min-width: 0;
 }
 
+.brand-event-mark {
+  display: block;
+  flex: 0 0 auto;
+  width: 112px;
+  height: 68px;
+  object-fit: contain;
+}
+
 .brand-mark {
   position: relative;
   display: grid;
@@ -867,6 +875,11 @@ h2 {
     width: 52px;
     height: 52px;
     font-size: 1.7rem;
+  }
+
+  .brand-event-mark {
+    width: 88px;
+    height: 54px;
   }
 
   h1 {
