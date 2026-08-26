@@ -94,12 +94,10 @@ button:disabled {
 }
 
 .topbar {
-  position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 18px;
-  min-height: 74px;
   padding: 6px 0 22px;
 }
 
@@ -109,18 +107,6 @@ button:disabled {
   align-items: center;
   gap: 14px;
   min-width: 0;
-}
-
-.brand-logo-only {
-  flex: 0 1 auto;
-  justify-content: center;
-  margin: 0 auto;
-}
-
-.school-logo {
-  display: block;
-  width: min(216px, 52vw);
-  height: auto;
 }
 
 .brand > div {
@@ -213,10 +199,6 @@ h2 {
 }
 
 .progress-pill {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  transform: translateY(-50%);
   min-width: 104px;
   padding: 10px 16px;
   border: 1px solid rgba(22, 125, 115, 0.18);
@@ -878,29 +860,13 @@ h2 {
   .topbar {
     align-items: stretch;
     flex-direction: column;
-    min-height: auto;
     padding-bottom: 16px;
-  }
-
-  .brand-logo-only {
-    align-self: center;
-  }
-
-  .progress-pill {
-    position: static;
-    transform: none;
-    align-self: stretch;
-    text-align: center;
   }
 
   .brand-mark {
     width: 52px;
     height: 52px;
     font-size: 1.7rem;
-  }
-
-  .school-logo {
-    width: min(178px, 58vw);
   }
 
   h1 {

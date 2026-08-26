@@ -7,7 +7,7 @@
       name="description"
       content="특수학교 초등학생을 위한 쉬운 3컷 사진 촬영 웹 앱"
     />
-    <title>이은학교 사진 놀이</title>
+    <title>이은 e페스티벌 방명록</title>
     <script>
       if (
         location.hostname === "pace33.github.io" &&
@@ -23,9 +23,21 @@
 
     <main class="app-shell" id="main">
       <header class="topbar">
-        <div class="brand brand-logo-only">
-          <img class="school-logo" src="./eeun-school-logo.png" alt="이은학교" />
-          <input id="titleInput" type="hidden" value="이은학교" />
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">3</span>
+          <div>
+            <h1>
+              <input
+                class="title-input"
+                id="titleInput"
+                type="text"
+                value="이은 e페스티벌 방명록"
+                maxlength="26"
+                aria-label="사진 이름"
+              />
+            </h1>
+            <p>쉽게 찍고, 예쁘게 꾸며요</p>
+          </div>
         </div>
         <div class="progress-pill" id="progressText" aria-live="polite">
           준비

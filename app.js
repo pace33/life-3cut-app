@@ -1,7 +1,8 @@
 const REQUIRED_SHOTS = 3;
 const DEFAULT_STICKER_SIZE = 54;
-const DEFAULT_TITLE = "3컷 사진 놀이";
+const DEFAULT_TITLE = "이은 e페스티벌 방명록";
 const SCHOOL_LOGO_SRC = "./eeun-school-logo.png";
+const OLD_DEFAULT_TITLES = new Set(["3컷 사진 놀이", "이은학교"]);
 const TITLE_STORAGE_KEY = `life-3cut-title:${window.location.pathname.replace(/\/index\.html$/, "/")}`;
 
 const PHOTO_EFFECTS = {
@@ -117,7 +118,11 @@ function currentTitle() {
 function loadSavedTitle() {
   try {
     const savedTitle = localStorage.getItem(TITLE_STORAGE_KEY);
-    if (savedTitle) els.titleInput.value = savedTitle;
+    if (savedTitle && !OLD_DEFAULT_TITLES.has(savedTitle.trim())) {
+      els.titleInput.value = savedTitle;
+    } else if (savedTitle) {
+      localStorage.removeItem(TITLE_STORAGE_KEY);
+    }
   } catch (error) {
     // Some browsers block storage in private modes; the app still works without it.
   }
