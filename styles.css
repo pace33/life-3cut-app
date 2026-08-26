@@ -759,19 +759,19 @@ h2 {
 }
 
 .photo-img.effect-bright {
-  filter: brightness(1.16) contrast(1.04) saturate(1.08);
+  filter: brightness(1.28) contrast(1.1) saturate(1.16);
 }
 
 .photo-img.effect-vivid {
-  filter: contrast(1.16) saturate(1.24);
+  filter: contrast(1.32) saturate(1.55) brightness(1.04);
 }
 
 .photo-img.effect-warm {
-  filter: sepia(0.18) saturate(1.16) brightness(1.05);
+  filter: sepia(0.34) saturate(1.36) brightness(1.1) contrast(1.06);
 }
 
 .photo-img.effect-mono {
-  filter: grayscale(1) contrast(1.08) brightness(1.05);
+  filter: grayscale(1) contrast(1.28) brightness(1.08);
 }
 
 .photo-strip.frame-pastel {

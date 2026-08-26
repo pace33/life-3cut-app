@@ -9,22 +9,22 @@ const PHOTO_EFFECTS = {
   bright: {
     label: "밝게",
     css: "effect-bright",
-    canvas: "brightness(1.16) contrast(1.04) saturate(1.08)",
+    canvas: "brightness(1.28) contrast(1.1) saturate(1.16)",
   },
   vivid: {
     label: "선명",
     css: "effect-vivid",
-    canvas: "contrast(1.16) saturate(1.24)",
+    canvas: "contrast(1.32) saturate(1.55) brightness(1.04)",
   },
   warm: {
     label: "따뜻",
     css: "effect-warm",
-    canvas: "sepia(0.18) saturate(1.16) brightness(1.05)",
+    canvas: "sepia(0.34) saturate(1.36) brightness(1.1) contrast(1.06)",
   },
   mono: {
     label: "흑백",
     css: "effect-mono",
-    canvas: "grayscale(1) contrast(1.08) brightness(1.05)",
+    canvas: "grayscale(1) contrast(1.28) brightness(1.08)",
   },
 };
 
