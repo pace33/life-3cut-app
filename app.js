@@ -67,6 +67,7 @@ const FRAME_STYLES = {
 
 const state = {
   stream: null,
+  facingMode: "user",
   photos: [],
   photoEffects: Array(REQUIRED_SHOTS).fill(""),
   frameStyle: "clean",
@@ -75,6 +76,7 @@ const state = {
   selectedStickerId: null,
   stickers: [],
   isCounting: false,
+  isStartingCamera: false,
   nextStickerId: 1,
 };
 
@@ -89,7 +91,11 @@ const els = {
   placeholder: document.querySelector("#previewPlaceholder"),
   countdown: document.querySelector("#countdown"),
   startCameraButton: document.querySelector("#startCameraButton"),
+  switchCameraButton: document.querySelector("#switchCameraButton"),
+  switchCameraLabel: document.querySelector("#switchCameraLabel"),
   takePhotoButton: document.querySelector("#takePhotoButton"),
+  cameraFallbackButton: document.querySelector("#cameraFallbackButton"),
+  cameraFileInput: document.querySelector("#cameraFileInput"),
   thumbGrid: document.querySelector("#thumbGrid"),
   captureNote: document.querySelector("#captureNote"),
   photoStrip: document.querySelector("#photoStrip"),
@@ -179,47 +185,202 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-async function startCamera() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    setStatus("이 브라우저는 카메라를 열 수 없어요.");
-    return;
+function cameraUseIsAllowedHere() {
+  const policy = document.permissionsPolicy || document.featurePolicy;
+  return !policy || typeof policy.allowsFeature !== "function" || policy.allowsFeature("camera");
+}
+
+function cameraConstraints(facingMode, preferExact) {
+  const preferredFacingMode = preferExact ? { exact: facingMode } : { ideal: facingMode };
+  return [
+    {
+      audio: false,
+      video: {
+        facingMode: preferredFacingMode,
+        width: { ideal: 1280 },
+        height: { ideal: 960 },
+      },
+    },
+    { audio: false, video: { facingMode: { ideal: facingMode } } },
+    { audio: false, video: true },
+  ];
+}
+
+async function requestCameraStream(facingMode, preferExact) {
+  let lastError;
+
+  for (const constraints of cameraConstraints(facingMode, preferExact)) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (error) {
+      lastError = error;
+      if (["NotAllowedError", "SecurityError", "NotReadableError"].includes(error.name)) {
+        break;
+      }
+    }
   }
 
+  throw lastError || new Error("Camera unavailable");
+}
+
+function waitForVideoReady(video) {
+  if (video.readyState >= 1 && video.videoWidth > 0) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => finish(new Error("Camera preview timed out")), 10000);
+
+    function finish(error) {
+      window.clearTimeout(timeoutId);
+      video.removeEventListener("loadedmetadata", onReady);
+      video.removeEventListener("canplay", onReady);
+      video.removeEventListener("error", onError);
+      error ? reject(error) : resolve();
+    }
+
+    function onReady() {
+      if (video.videoWidth > 0) finish();
+    }
+
+    function onError() {
+      finish(new Error("Camera preview failed"));
+    }
+
+    video.addEventListener("loadedmetadata", onReady);
+    video.addEventListener("canplay", onReady);
+    video.addEventListener("error", onError);
+  });
+}
+
+function cameraErrorMessage(error) {
+  if (!window.isSecureContext) {
+    return "카메라는 안전한 주소(https://)에서 사용할 수 있어요.";
+  }
+
+  if (!cameraUseIsAllowedHere()) {
+    return "이 화면에서는 카메라가 막혀 있어요. Chrome에서 주소를 직접 열어 주세요.";
+  }
+
+  switch (error?.name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "카메라 권한을 허용한 뒤 다시 눌러 주세요.";
+    case "NotReadableError":
+    case "AbortError":
+      return "다른 앱이 카메라를 사용 중이에요. 카메라 앱을 닫고 다시 눌러 주세요.";
+    case "NotFoundError":
+      return "사용할 수 있는 카메라를 찾지 못했어요.";
+    default:
+      return "카메라를 열지 못했어요. Chrome에서 열거나 아래 버튼을 이용해 주세요.";
+  }
+}
+
+function updateCameraDirection() {
+  const usesRearCamera = state.facingMode === "environment";
+  els.video.classList.toggle("mirrored", !usesRearCamera);
+  els.switchCameraLabel.textContent = usesRearCamera ? "전면 카메라" : "후면 카메라";
+  els.switchCameraButton.setAttribute(
+    "aria-label",
+    usesRearCamera ? "전면 카메라로 전환" : "후면 카메라로 전환",
+  );
+  els.cameraFileInput.setAttribute("capture", usesRearCamera ? "environment" : "user");
+}
+
+function showCameraFallback() {
+  els.cameraFallbackButton.hidden = false;
+}
+
+function handleCameraEnded(stream) {
+  if (state.stream !== stream) return;
+  state.stream = null;
+  els.video.srcObject = null;
+  els.placeholder.classList.remove("hidden");
+  els.takePhotoButton.disabled = true;
+  els.switchCameraButton.disabled = true;
+  showCameraFallback();
+  setStatus("카메라 연결이 멈췄어요. 다시 시작해 주세요.");
+}
+
+async function activateCamera(preferExact = false) {
+  if (state.isStartingCamera) return false;
+
+  if (!window.isSecureContext || !cameraUseIsAllowedHere()) {
+    setStatus(cameraErrorMessage());
+    showCameraFallback();
+    return false;
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setStatus("이 브라우저에서는 실시간 카메라를 열 수 없어요. 아래 버튼을 이용해 주세요.");
+    showCameraFallback();
+    return false;
+  }
+
+  state.isStartingCamera = true;
   stopCamera();
   setStatus("카메라를 준비하고 있어요");
   setProgress("준비");
   els.startCameraButton.disabled = true;
+  els.switchCameraButton.disabled = true;
+  els.takePhotoButton.disabled = true;
 
   try {
-    state.stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        facingMode: "user",
-        width: { ideal: 1280 },
-        height: { ideal: 960 },
-      },
-    });
-
-    els.video.srcObject = state.stream;
+    const stream = await requestCameraStream(state.facingMode, preferExact);
+    state.stream = stream;
+    els.video.autoplay = true;
+    els.video.muted = true;
+    els.video.playsInline = true;
+    els.video.setAttribute("playsinline", "");
+    els.video.setAttribute("webkit-playsinline", "");
+    els.video.srcObject = stream;
     await els.video.play();
+    await waitForVideoReady(els.video);
+
+    const videoTrack = stream.getVideoTracks()[0];
+    const actualFacingMode = videoTrack?.getSettings?.().facingMode;
+    if (["user", "environment"].includes(actualFacingMode)) {
+      state.facingMode = actualFacingMode;
+    }
+    updateCameraDirection();
+
+    videoTrack?.addEventListener("ended", () => handleCameraEnded(stream), { once: true });
     els.placeholder.classList.add("hidden");
+    els.cameraFallbackButton.hidden = true;
     els.takePhotoButton.disabled = false;
+    els.switchCameraButton.disabled = false;
     setStatus(`${state.photos.length + 1}번째 사진을 찍어요`);
     setProgress(`${state.photos.length}/3`);
+    return true;
   } catch (error) {
+    stopCamera();
     els.placeholder.classList.remove("hidden");
     els.takePhotoButton.disabled = true;
-    setStatus("카메라 권한을 확인해 주세요.");
+    els.switchCameraButton.disabled = true;
+    showCameraFallback();
+    setStatus(cameraErrorMessage(error));
+    return false;
   } finally {
+    state.isStartingCamera = false;
     els.startCameraButton.disabled = false;
   }
 }
 
+function startCamera() {
+  return activateCamera(false);
+}
+
+async function switchCamera() {
+  if (state.isCounting || state.isStartingCamera) return;
+  state.facingMode = state.facingMode === "user" ? "environment" : "user";
+  updateCameraDirection();
+  await activateCamera(true);
+}
+
 function stopCamera() {
-  if (!state.stream) return;
-  state.stream.getTracks().forEach((track) => track.stop());
+  const stream = state.stream;
   state.stream = null;
+  els.video.pause();
   els.video.srcObject = null;
+  stream?.getTracks().forEach((track) => track.stop());
 }
 
 async function runCountdownAndCapture() {
@@ -228,12 +389,25 @@ async function runCountdownAndCapture() {
   state.isCounting = true;
   els.takePhotoButton.disabled = true;
   els.startCameraButton.disabled = true;
+  els.switchCameraButton.disabled = true;
   els.countdown.classList.add("show");
 
   for (const number of [3, 2, 1]) {
     els.countdown.textContent = String(number);
     setStatus(`${number}초 뒤 찍어요`);
     await wait(900);
+  }
+
+  if (!state.stream || els.video.readyState < 2 || els.video.videoWidth === 0) {
+    els.countdown.classList.remove("show");
+    els.countdown.textContent = "";
+    state.isCounting = false;
+    els.startCameraButton.disabled = false;
+    els.switchCameraButton.disabled = !state.stream;
+    els.takePhotoButton.disabled = true;
+    showCameraFallback();
+    setStatus("카메라 연결을 다시 확인해 주세요.");
+    return;
   }
 
   els.countdown.textContent = "찰칵!";
@@ -246,6 +420,7 @@ async function runCountdownAndCapture() {
   els.countdown.textContent = "";
   state.isCounting = false;
   els.startCameraButton.disabled = false;
+  els.switchCameraButton.disabled = !state.stream;
 
   if (state.photos.length >= REQUIRED_SHOTS) {
     setStatus("3장을 모두 찍었어요");
@@ -261,18 +436,70 @@ async function runCountdownAndCapture() {
 }
 
 function capturePhoto() {
-  const width = els.video.videoWidth || 1280;
-  const height = els.video.videoHeight || 960;
+  const sourceWidth = els.video.videoWidth || 1280;
+  const sourceHeight = els.video.videoHeight || 960;
+  const scale = Math.min(1, 1600 / Math.max(sourceWidth, sourceHeight));
+  const width = Math.round(sourceWidth * scale);
+  const height = Math.round(sourceHeight * scale);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
 
-  ctx.translate(width, 0);
-  ctx.scale(-1, 1);
+  if (state.facingMode !== "environment") {
+    ctx.translate(width, 0);
+    ctx.scale(-1, 1);
+  }
   ctx.drawImage(els.video, 0, 0, width, height);
 
-  return canvas.toDataURL("image/png");
+  return canvas.toDataURL("image/jpeg", 0.92);
+}
+
+async function photoFromFile(file) {
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = await loadImage(objectUrl);
+    const scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d").drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL("image/jpeg", 0.92);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function importCameraPhoto(event) {
+  const [file] = event.target.files || [];
+  event.target.value = "";
+  if (!file || state.photos.length >= REQUIRED_SHOTS) return;
+
+  els.cameraFallbackButton.disabled = true;
+  setStatus("사진을 불러오고 있어요");
+
+  try {
+    state.photos.push(await photoFromFile(file));
+    renderThumbs();
+
+    if (state.photos.length >= REQUIRED_SHOTS) {
+      setStatus("3장을 모두 찍었어요");
+      setProgress("꾸미기");
+      await wait(300);
+      openEditor();
+      return;
+    }
+
+    setStatus(`${state.photos.length + 1}번째 사진을 찍어요`);
+    setProgress(`${state.photos.length}/3`);
+  } catch (error) {
+    setStatus("사진을 불러오지 못했어요. 다시 촬영해 주세요.");
+  } finally {
+    els.cameraFallbackButton.disabled = false;
+  }
 }
 
 function renderThumbs() {
@@ -778,7 +1005,10 @@ function drawFilmPerforations(ctx, x, y, width, height) {
 }
 
 els.startCameraButton.addEventListener("click", startCamera);
+els.switchCameraButton.addEventListener("click", switchCamera);
 els.takePhotoButton.addEventListener("click", runCountdownAndCapture);
+els.cameraFallbackButton.addEventListener("click", () => els.cameraFileInput.click());
+els.cameraFileInput.addEventListener("change", importCameraPhoto);
 els.retakeButton.addEventListener("click", resetAll);
 els.saveButton.addEventListener("click", saveCompositePng);
 els.titleInput.addEventListener("input", syncTitleFromInput);
@@ -817,7 +1047,9 @@ els.stickerPalette.addEventListener("click", (event) => {
 });
 
 window.addEventListener("beforeunload", stopCamera);
+window.addEventListener("pagehide", stopCamera);
 window.addEventListener("resize", fitTitleInput);
+updateCameraDirection();
 loadSavedTitle();
 syncTitleFromInput();
 renderThumbs();

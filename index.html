@@ -16,7 +16,7 @@
         location.replace(`https://aiedue.ddns.net${location.pathname}${location.search}${location.hash}`);
       }
     </script>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20261019-camera" />
   </head>
   <body>
     <a class="skip-link" href="#main">사진 놀이 바로가기</a>
@@ -65,11 +65,20 @@
               <span class="button-icon camera-icon" aria-hidden="true"></span>
               카메라 시작
             </button>
+            <button class="button secondary" id="switchCameraButton" type="button" disabled>
+              <span class="switch-camera-icon" aria-hidden="true">↻</span>
+              <span id="switchCameraLabel">후면 카메라</span>
+            </button>
             <button class="button coral" id="takePhotoButton" type="button" disabled>
               <span class="button-icon shutter-icon" aria-hidden="true"></span>
               3초 뒤 촬영
             </button>
           </div>
+          <button class="button secondary camera-fallback" id="cameraFallbackButton" type="button" hidden>
+            <span class="button-icon camera-icon" aria-hidden="true"></span>
+            기기 카메라로 촬영
+          </button>
+          <input id="cameraFileInput" type="file" accept="image/*" capture="user" hidden />
         </div>
 
         <aside class="shot-list" aria-label="찍은 사진">
@@ -195,6 +204,6 @@
       </section>
     </main>
 
-    <script src="./app.js"></script>
+    <script src="./app.js?v=20261019-camera"></script>
   </body>
 </html>
