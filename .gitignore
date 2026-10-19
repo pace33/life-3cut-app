@@ -1,0 +1,7 @@
+android-wrapper/.gradle/
+android-wrapper/.idea/
+android-wrapper/local.properties
+android-wrapper/app/build/
+android-wrapper/build/
+android-wrapper/*.apk
+

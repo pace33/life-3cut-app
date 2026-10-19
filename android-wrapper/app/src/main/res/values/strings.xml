@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">이은 e페스티벌 방명록</string>
+    <string name="camera_permission_needed">사진 촬영을 위해 카메라 권한을 허용해 주세요.</string>
+    <string name="photo_saved">사진을 Pictures/EeunPhotoBooth에 저장했어요.</string>
+    <string name="photo_save_failed">사진을 저장하지 못했어요.</string>
+</resources>
+

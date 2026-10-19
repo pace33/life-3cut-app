@@ -894,10 +894,18 @@ async function saveCompositePng() {
     drawImageContain(ctx, schoolLogo, width / 2, height - footerHeight + 22, 210, 76, true);
   }
 
-  const link = document.createElement("a");
   const fileTitle = currentTitle().replace(/[\\/:*?"<>|]/g, "").trim() || "3cut-photo";
-  link.download = `${fileTitle}-${new Date().toISOString().slice(0, 10)}.png`;
-  link.href = canvas.toDataURL("image/png");
+  const fileName = `${fileTitle}-${new Date().toISOString().slice(0, 10)}.png`;
+  const pngDataUrl = canvas.toDataURL("image/png");
+
+  if (window.AndroidApp && typeof window.AndroidApp.saveImage === "function") {
+    window.AndroidApp.saveImage(pngDataUrl, fileName);
+    return;
+  }
+
+  const link = document.createElement("a");
+  link.download = fileName;
+  link.href = pngDataUrl;
   link.click();
 }
 

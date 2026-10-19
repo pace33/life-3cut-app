@@ -31,3 +31,9 @@ Codex에서 확인할 때는 준비된 로컬 주소를 사용하면 됩니다.
 - `index.html`: 화면 구조
 - `styles.css`: 밝고 쉬운 UI 디자인
 - `app.js`: 카메라 촬영, 카운트다운, 스티커 이동, PNG 저장 기능
+
+## Android APK
+
+안드로이드용 설치 파일은 `dist/eeun-efestival-photo.apk`입니다.
+Android 8.0 이상에서 실행되며, 웹 앱 전체가 포함되어 인터넷 없이 사용할 수 있습니다.
+완성 사진은 기기의 `Pictures/EeunPhotoBooth` 폴더에 저장됩니다.
