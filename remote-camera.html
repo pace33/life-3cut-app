@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#167d73" />
+    <title>휴대폰 카메라 연결</title>
+    <script>
+      if (location.hostname === "pace33.github.io" && location.pathname.startsWith("/pic/7/")) {
+        location.replace(`https://aiedue.ddns.net${location.pathname}${location.search}${location.hash}`);
+      }
+    </script>
+    <link rel="stylesheet" href="./remote-camera.css?v=20261023" />
+  </head>
+  <body>
+    <main class="phone-shell">
+      <header class="phone-header">
+        <img src="./e-festival-header-transparent.png" alt="E-페스티벌" />
+        <div>
+          <h1>휴대폰 카메라</h1>
+          <p id="headerStatus">스탠바이미와 연결해요</p>
+        </div>
+      </header>
+
+      <section class="connect-screen" id="connectScreen">
+        <form id="connectForm">
+          <label for="connectionCode">연결 번호 6자리</label>
+          <input
+            id="connectionCode"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            pattern="[0-9]{6}"
+            maxlength="6"
+            placeholder="000000"
+            required
+          />
+          <button class="primary-button" id="connectButton" type="submit">카메라 시작</button>
+        </form>
+        <p class="connect-message" id="connectMessage" aria-live="polite">
+          스탠바이미 화면에 나온 번호를 입력하세요.
+        </p>
+      </section>
+
+      <section class="camera-screen" id="cameraStage" hidden>
+        <div class="phone-preview">
+          <video id="phoneVideo" autoplay muted playsinline></video>
+          <div class="phone-countdown" id="phoneCountdown" aria-live="assertive"></div>
+          <div class="camera-flash" id="cameraFlash" aria-hidden="true"></div>
+        </div>
+        <div class="camera-status" id="cameraStatus" aria-live="polite">
+          카메라를 준비하고 있어요
+        </div>
+        <button class="secondary-button" id="switchPhoneCamera" type="button" disabled>
+          <span aria-hidden="true">↻</span>
+          <span id="switchPhoneCameraLabel">후면 카메라</span>
+        </button>
+      </section>
+    </main>
+
+    <script src="./remote-camera.js?v=20261023"></script>
+  </body>
+</html>

@@ -5,6 +5,14 @@ const FESTIVAL_HEADER_SRC = "./e-festival-header-transparent.png";
 const SCHOOL_LOGO_SRC = "./eeun-school-logo-transparent.png";
 const OLD_DEFAULT_TITLES = new Set(["3컷 사진 놀이", "이은학교"]);
 const TITLE_STORAGE_KEY = `life-3cut-title:${window.location.pathname.replace(/\/index\.html$/, "/")}`;
+const REMOTE_COLLECTION = "photos_7";
+const REMOTE_CAMERA_URL = "https://aiedue.ddns.net/pic/7/remote-camera.html";
+const REMOTE_API_BASE =
+  window.location.hostname === "aiedue.ddns.net"
+    ? "/pic-db/db-api"
+    : "https://aiedue.ddns.net/pic-db/db-api";
+const REMOTE_SESSION_MS = 30 * 60 * 1000;
+const REMOTE_POLL_MS = 1000;
 
 const PHOTO_EFFECTS = {
   bright: {
@@ -78,6 +86,18 @@ const state = {
   isCounting: false,
   isStartingCamera: false,
   nextStickerId: 1,
+  remote: {
+    sessionId: "",
+    pin: "",
+    expiresAt: "",
+    connected: false,
+    pollTimer: 0,
+    pollBusy: false,
+    pendingCommandId: "",
+    pendingResolve: null,
+    pendingReject: null,
+    handledEventIds: new Set(),
+  },
 };
 
 const els = {
@@ -89,11 +109,15 @@ const els = {
   editorStatus: document.querySelector("#editorStatus"),
   video: document.querySelector("#cameraPreview"),
   placeholder: document.querySelector("#previewPlaceholder"),
+  previewMessage: document.querySelector("#previewMessage"),
   countdown: document.querySelector("#countdown"),
   startCameraButton: document.querySelector("#startCameraButton"),
   switchCameraButton: document.querySelector("#switchCameraButton"),
   switchCameraLabel: document.querySelector("#switchCameraLabel"),
   takePhotoButton: document.querySelector("#takePhotoButton"),
+  takePhotoLabel: document.querySelector("#takePhotoLabel"),
+  remoteCameraButton: document.querySelector("#remoteCameraButton"),
+  remoteCameraLabel: document.querySelector("#remoteCameraLabel"),
   cameraFallbackButton: document.querySelector("#cameraFallbackButton"),
   cameraFileInput: document.querySelector("#cameraFileInput"),
   thumbGrid: document.querySelector("#thumbGrid"),
@@ -108,6 +132,12 @@ const els = {
   deleteStickerButton: document.querySelector("#deleteStickerButton"),
   saveButton: document.querySelector("#saveButton"),
   retakeButton: document.querySelector("#retakeButton"),
+  pairingOverlay: document.querySelector("#pairingOverlay"),
+  pairingCloseButton: document.querySelector("#pairingCloseButton"),
+  pairingQrImage: document.querySelector("#pairingQrImage"),
+  pairingCode: document.querySelector("#pairingCode"),
+  pairingStatus: document.querySelector("#pairingStatus"),
+  pairingStatusText: document.querySelector("#pairingStatusText"),
 };
 
 function setStatus(message) {
@@ -183,6 +213,386 @@ function wait(ms) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function randomId(bytes = 16) {
+  const values = new Uint8Array(bytes);
+  if (window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(values);
+  } else {
+    for (let index = 0; index < values.length; index += 1) {
+      values[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  return [...values].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function randomPin() {
+  const values = new Uint32Array(1);
+  if (window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(values);
+    return String(100000 + (values[0] % 900000));
+  }
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function encodeStoragePath(path) {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
+function remoteStorageUrl(path) {
+  return `${REMOTE_API_BASE}/storage/files/${encodeStoragePath(path)}`;
+}
+
+async function remoteApiJson(path, options = {}) {
+  const response = await fetch(`${REMOTE_API_BASE}${path}`, {
+    ...options,
+    cache: "no-store",
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json; charset=utf-8" } : {}),
+      ...(options.headers || {}),
+    },
+  });
+
+  if (!response.ok) {
+    let detail = "";
+    try {
+      detail = (await response.json()).error || "";
+    } catch (error) {
+      detail = await response.text();
+    }
+    throw new Error(detail || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+function postRemoteEvent(kind, extra = {}) {
+  return remoteApiJson(`/items/${REMOTE_COLLECTION}`, {
+    method: "POST",
+    body: JSON.stringify({
+      data: {
+        kind,
+        sessionId: state.remote.sessionId,
+        pin: state.remote.pin,
+        createdAt: new Date().toISOString(),
+        expiresAt: state.remote.expiresAt,
+        ...extra,
+      },
+    }),
+  });
+}
+
+function setPairingStatus(message, connected = false) {
+  els.pairingStatusText.textContent = message;
+  els.pairingStatus.classList.toggle("connected", connected);
+}
+
+function setRemoteConnectedUi() {
+  els.remoteCameraButton.classList.toggle("connected", state.remote.connected);
+  els.remoteCameraLabel.textContent = state.remote.connected
+    ? "휴대폰 카메라 연결됨"
+    : "휴대폰 카메라 연결";
+  els.takePhotoLabel.textContent = state.remote.connected ? "휴대폰으로 촬영" : "3초 뒤 촬영";
+
+  if (!state.remote.connected) return;
+
+  els.placeholder.classList.remove("hidden");
+  els.previewMessage.textContent = "휴대폰 카메라가 연결됐어요";
+  els.switchCameraButton.disabled = true;
+  els.cameraFallbackButton.hidden = true;
+  els.takePhotoButton.disabled = state.isCounting || state.photos.length >= REQUIRED_SHOTS;
+  setStatus(`${state.photos.length + 1}번째 사진을 휴대폰으로 찍어요`);
+  setProgress(`${state.photos.length}/3`);
+}
+
+function closePairingOverlay() {
+  els.pairingOverlay.hidden = true;
+  els.remoteCameraButton.focus();
+}
+
+async function createRemoteSession() {
+  state.remote.sessionId = randomId(18);
+  state.remote.pin = randomPin();
+  state.remote.expiresAt = new Date(Date.now() + REMOTE_SESSION_MS).toISOString();
+  state.remote.connected = false;
+  state.remote.handledEventIds.clear();
+
+  try {
+    await postRemoteEvent("photoBoothSession", {
+      pagePath: "/pic/7/",
+    });
+  } catch (error) {
+    state.remote.sessionId = "";
+    state.remote.pin = "";
+    state.remote.expiresAt = "";
+    throw error;
+  }
+}
+
+function startRemotePolling() {
+  window.clearInterval(state.remote.pollTimer);
+  state.remote.pollTimer = window.setInterval(pollRemoteEvents, REMOTE_POLL_MS);
+  pollRemoteEvents();
+}
+
+async function openRemotePairing() {
+  stopCamera();
+  els.placeholder.classList.remove("hidden");
+  els.previewMessage.textContent = "휴대폰 연결을 기다리고 있어요";
+  els.takePhotoButton.disabled = true;
+  els.switchCameraButton.disabled = true;
+  els.remoteCameraButton.disabled = true;
+  els.pairingOverlay.hidden = false;
+  setPairingStatus("연결 번호를 만들고 있어요");
+
+  try {
+    const sessionExpired =
+      !state.remote.expiresAt || new Date(state.remote.expiresAt).getTime() <= Date.now();
+    if (!state.remote.sessionId || sessionExpired) {
+      await createRemoteSession();
+    }
+
+    const connectUrl = `${REMOTE_CAMERA_URL}?session=${encodeURIComponent(
+      state.remote.sessionId,
+    )}&code=${encodeURIComponent(state.remote.pin)}`;
+    els.pairingCode.textContent = state.remote.pin;
+    const qr = window.qrcode(0, "M");
+    qr.addData(connectUrl);
+    qr.make();
+    els.pairingQrImage.src = qr.createDataURL(7, 16);
+    setPairingStatus(
+      state.remote.connected ? "휴대폰 카메라가 연결됐어요" : "휴대폰 연결을 기다리고 있어요",
+      state.remote.connected,
+    );
+    startRemotePolling();
+  } catch (error) {
+    console.error(error);
+    setPairingStatus("연결 서버를 열지 못했어요. 잠시 뒤 다시 눌러 주세요.");
+  } finally {
+    els.remoteCameraButton.disabled = false;
+  }
+}
+
+function resolvePendingRemotePhoto(photo) {
+  const resolve = state.remote.pendingResolve;
+  state.remote.pendingResolve = null;
+  state.remote.pendingReject = null;
+  state.remote.pendingCommandId = "";
+  resolve?.(photo);
+}
+
+function rejectPendingRemotePhoto(error) {
+  const reject = state.remote.pendingReject;
+  state.remote.pendingResolve = null;
+  state.remote.pendingReject = null;
+  state.remote.pendingCommandId = "";
+  reject?.(error);
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("사진을 읽지 못했어요."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function blankJpegBlob() {
+  return new Promise((resolve) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, 1, 1);
+    canvas.toBlob(resolve, "image/jpeg", 0.5);
+  });
+}
+
+async function scrubRemotePhoto(storagePath) {
+  try {
+    const blank = await blankJpegBlob();
+    if (!blank) return;
+    await fetch(remoteStorageUrl(storagePath), {
+      method: "PUT",
+      headers: { "Content-Type": "image/jpeg" },
+      body: blank,
+    });
+  } catch (error) {
+    console.warn("임시 사진 정리 실패", error);
+  }
+}
+
+async function receiveRemotePhoto(event) {
+  if (!event.storagePath || event.commandId !== state.remote.pendingCommandId) return;
+
+  const response = await fetch(`${remoteStorageUrl(event.storagePath)}?v=${Date.now()}`, {
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("휴대폰 사진을 받지 못했어요.");
+  const photo = await blobToDataUrl(await response.blob());
+  resolvePendingRemotePhoto(photo);
+  scrubRemotePhoto(event.storagePath);
+}
+
+async function pollRemoteEvents() {
+  if (!state.remote.sessionId || state.remote.pollBusy) return;
+  state.remote.pollBusy = true;
+
+  try {
+    const result = await remoteApiJson(`/items/${REMOTE_COLLECTION}?limit=200&t=${Date.now()}`);
+    const records = (result.items || []).filter((record) => {
+      const event = record.data || {};
+      return event.sessionId === state.remote.sessionId && event.pin === state.remote.pin;
+    });
+
+    for (const record of records.reverse()) {
+      if (state.remote.handledEventIds.has(record.id)) continue;
+      state.remote.handledEventIds.add(record.id);
+      const event = record.data || {};
+
+      if (event.kind === "photoBoothPhoneReady") {
+        state.remote.connected = true;
+        setPairingStatus("휴대폰 카메라가 연결됐어요", true);
+        setRemoteConnectedUi();
+        window.setTimeout(() => {
+          if (!els.pairingOverlay.hidden && state.remote.connected) closePairingOverlay();
+        }, 900);
+      }
+
+      if (
+        event.kind === "photoBoothPhoto" &&
+        event.commandId === state.remote.pendingCommandId
+      ) {
+        try {
+          await receiveRemotePhoto(event);
+        } catch (error) {
+          state.remote.handledEventIds.delete(record.id);
+          throw error;
+        }
+      }
+
+      if (
+        event.kind === "photoBoothError" &&
+        event.commandId === state.remote.pendingCommandId
+      ) {
+        rejectPendingRemotePhoto(new Error(event.message || "휴대폰 촬영에 실패했어요."));
+      }
+    }
+  } catch (error) {
+    console.error(error);
+    if (!els.pairingOverlay.hidden && !state.remote.connected) {
+      setPairingStatus("연결 서버를 확인하고 있어요. 잠시 기다려 주세요.");
+    }
+  } finally {
+    state.remote.pollBusy = false;
+  }
+}
+
+async function stopRemoteConnection(notifyPhone = false) {
+  window.clearInterval(state.remote.pollTimer);
+  state.remote.pollTimer = 0;
+  if (notifyPhone && state.remote.sessionId) {
+    postRemoteEvent("photoBoothClosed").catch(() => {});
+  }
+  rejectPendingRemotePhoto(new Error("휴대폰 연결이 종료됐어요."));
+  state.remote.sessionId = "";
+  state.remote.pin = "";
+  state.remote.expiresAt = "";
+  state.remote.connected = false;
+  setRemoteConnectedUi();
+}
+
+function waitForRemotePhoto(commandId) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      if (state.remote.pendingCommandId !== commandId) return;
+      rejectPendingRemotePhoto(new Error("사진 전송 시간이 초과됐어요. 다시 찍어 주세요."));
+    }, 30000);
+
+    state.remote.pendingCommandId = commandId;
+    state.remote.pendingResolve = (photo) => {
+      window.clearTimeout(timeoutId);
+      resolve(photo);
+    };
+    state.remote.pendingReject = (error) => {
+      window.clearTimeout(timeoutId);
+      reject(error);
+    };
+  });
+}
+
+async function showRemoteCountdown(captureAt) {
+  els.countdown.classList.add("show");
+  let lastText = "";
+
+  while (Date.now() < captureAt) {
+    const seconds = Math.ceil((captureAt - Date.now()) / 1000);
+    const nextText = seconds > 3 ? "준비" : String(Math.max(1, seconds));
+    if (nextText !== lastText) {
+      els.countdown.textContent = nextText;
+      setStatus(nextText === "준비" ? "휴대폰 촬영을 준비해요" : `${nextText}초 뒤 찍어요`);
+      lastText = nextText;
+    }
+    await wait(100);
+  }
+
+  els.countdown.textContent = "찰칵!";
+  await wait(450);
+  els.countdown.classList.remove("show");
+  els.countdown.textContent = "";
+}
+
+async function runRemoteCountdownAndCapture() {
+  if (!state.remote.connected || state.isCounting || state.photos.length >= REQUIRED_SHOTS) return;
+
+  state.isCounting = true;
+  els.takePhotoButton.disabled = true;
+  els.startCameraButton.disabled = true;
+  els.remoteCameraButton.disabled = true;
+  const commandId = randomId(12);
+  const captureAt = Date.now() + 4500;
+  let photoError = null;
+  const photoPromise = waitForRemotePhoto(commandId).catch((error) => {
+    photoError = error;
+    return null;
+  });
+
+  try {
+    await postRemoteEvent("photoBoothCapture", {
+      commandId,
+      shotIndex: state.photos.length,
+      captureAt,
+    });
+    await showRemoteCountdown(captureAt);
+    setStatus("휴대폰 사진을 받고 있어요");
+    const photo = await photoPromise;
+    if (photoError) throw photoError;
+    if (!photo) throw new Error("휴대폰 사진을 받지 못했어요.");
+    state.photos.push(photo);
+    renderThumbs();
+
+    if (state.photos.length >= REQUIRED_SHOTS) {
+      setStatus("3장을 모두 찍었어요");
+      setProgress("꾸미기");
+      await wait(400);
+      openEditor();
+      return;
+    }
+
+    setStatus(`${state.photos.length + 1}번째 사진을 휴대폰으로 찍어요`);
+    setProgress(`${state.photos.length}/3`);
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message || "휴대폰 촬영에 실패했어요. 다시 눌러 주세요.");
+  } finally {
+    state.isCounting = false;
+    els.startCameraButton.disabled = false;
+    els.remoteCameraButton.disabled = false;
+    els.takePhotoButton.disabled = !state.remote.connected || state.photos.length >= REQUIRED_SHOTS;
+  }
 }
 
 function cameraUseIsAllowedHere() {
@@ -364,7 +774,11 @@ async function activateCamera(preferExact = false) {
   }
 }
 
-function startCamera() {
+async function startCamera() {
+  if (state.remote.sessionId) {
+    await stopRemoteConnection(true);
+  }
+  els.previewMessage.textContent = "큰 버튼을 눌러 시작해요";
   return activateCamera(false);
 }
 
@@ -384,6 +798,11 @@ function stopCamera() {
 }
 
 async function runCountdownAndCapture() {
+  if (state.remote.connected) {
+    await runRemoteCountdownAndCapture();
+    return;
+  }
+
   if (!state.stream || state.isCounting || state.photos.length >= REQUIRED_SHOTS) return;
 
   state.isCounting = true;
@@ -810,10 +1229,14 @@ function resetAll() {
   renderThumbs();
   openCamera();
   els.placeholder.classList.remove("hidden");
-  els.takePhotoButton.disabled = true;
-  setStatus("카메라를 켜 주세요");
+  els.takePhotoButton.disabled = !state.remote.connected;
+  setStatus(state.remote.connected ? "1번째 사진을 휴대폰으로 찍어요" : "카메라를 켜 주세요");
   setProgress("준비");
-  startCamera();
+  if (state.remote.connected) {
+    setRemoteConnectedUi();
+  } else {
+    startCamera();
+  }
 }
 
 async function saveCompositePng() {
@@ -1015,6 +1438,8 @@ function drawFilmPerforations(ctx, x, y, width, height) {
 els.startCameraButton.addEventListener("click", startCamera);
 els.switchCameraButton.addEventListener("click", switchCamera);
 els.takePhotoButton.addEventListener("click", runCountdownAndCapture);
+els.remoteCameraButton.addEventListener("click", openRemotePairing);
+els.pairingCloseButton.addEventListener("click", closePairingOverlay);
 els.cameraFallbackButton.addEventListener("click", () => els.cameraFileInput.click());
 els.cameraFileInput.addEventListener("change", importCameraPhoto);
 els.retakeButton.addEventListener("click", resetAll);
@@ -1054,8 +1479,17 @@ els.stickerPalette.addEventListener("click", (event) => {
   addSticker(button.dataset.sticker);
 });
 
-window.addEventListener("beforeunload", stopCamera);
-window.addEventListener("pagehide", stopCamera);
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.pairingOverlay.hidden) closePairingOverlay();
+});
+window.addEventListener("beforeunload", () => {
+  stopCamera();
+  window.clearInterval(state.remote.pollTimer);
+});
+window.addEventListener("pagehide", () => {
+  stopCamera();
+  window.clearInterval(state.remote.pollTimer);
+});
 window.addEventListener("resize", fitTitleInput);
 updateCameraDirection();
 loadSavedTitle();

@@ -16,7 +16,7 @@
         location.replace(`https://aiedue.ddns.net${location.pathname}${location.search}${location.hash}`);
       }
     </script>
-    <link rel="stylesheet" href="./styles.css?v=20261019-camera" />
+    <link rel="stylesheet" href="./styles.css?v=20261023-remote-camera" />
   </head>
   <body>
     <a class="skip-link" href="#main">사진 놀이 바로가기</a>
@@ -55,7 +55,7 @@
             <video id="cameraPreview" autoplay playsinline muted></video>
             <div class="preview-placeholder" id="previewPlaceholder">
               <span class="placeholder-camera" aria-hidden="true"></span>
-              <strong>큰 버튼을 눌러 시작해요</strong>
+              <strong id="previewMessage">큰 버튼을 눌러 시작해요</strong>
             </div>
             <div class="countdown" id="countdown" aria-live="assertive"></div>
           </div>
@@ -71,9 +71,13 @@
             </button>
             <button class="button coral" id="takePhotoButton" type="button" disabled>
               <span class="button-icon shutter-icon" aria-hidden="true"></span>
-              3초 뒤 촬영
+              <span id="takePhotoLabel">3초 뒤 촬영</span>
             </button>
           </div>
+          <button class="button remote-camera-button" id="remoteCameraButton" type="button">
+            <span class="phone-camera-icon" aria-hidden="true"></span>
+            <span id="remoteCameraLabel">휴대폰 카메라 연결</span>
+          </button>
           <button class="button secondary camera-fallback" id="cameraFallbackButton" type="button" hidden>
             <span class="button-icon camera-icon" aria-hidden="true"></span>
             기기 카메라로 촬영
@@ -204,6 +208,33 @@
       </section>
     </main>
 
-    <script src="./app.js?v=20261019-camera"></script>
+    <div class="pairing-overlay" id="pairingOverlay" role="dialog" aria-modal="true" aria-labelledby="pairingTitle" hidden>
+      <section class="pairing-panel">
+        <button class="pairing-close" id="pairingCloseButton" type="button" aria-label="휴대폰 연결 창 닫기">×</button>
+        <div class="pairing-copy">
+          <span class="pairing-step">휴대폰 연결</span>
+          <h2 id="pairingTitle">QR코드를 휴대폰으로 찍어 주세요</h2>
+          <p>휴대폰 카메라를 허용하면 이 화면과 자동으로 연결돼요.</p>
+        </div>
+        <div class="pairing-grid">
+          <div class="qr-card">
+            <img id="pairingQrImage" alt="휴대폰 카메라 연결 QR코드" />
+          </div>
+          <div class="pairing-code-card">
+            <span>연결 번호</span>
+            <strong id="pairingCode">------</strong>
+            <p>QR이 안 되면 휴대폰에서 아래 주소를 열고 번호를 입력하세요.</p>
+            <b id="pairingShortUrl">aiedue.ddns.net/pic/7/remote-camera.html</b>
+          </div>
+        </div>
+        <div class="pairing-status" id="pairingStatus" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="pairingStatusText">휴대폰 연결을 기다리고 있어요</span>
+        </div>
+      </section>
+    </div>
+
+    <script src="./qrcode.js?v=1.4.4"></script>
+    <script src="./app.js?v=20261023-remote-camera"></script>
   </body>
 </html>

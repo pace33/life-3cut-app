@@ -1,0 +1,254 @@
+:root {
+  --ink: #1f2937;
+  --muted: #627083;
+  --primary: #167d73;
+  --primary-dark: #0f665f;
+  --line: #dce8ef;
+  --coral: #f06d68;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #f7fbff 0%, #eef8f4 62%, #fff7e6 100%);
+  color: var(--ink);
+  font-family: "Segoe UI", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+  letter-spacing: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.phone-shell {
+  width: min(100% - 24px, 620px);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: max(18px, env(safe-area-inset-top)) 0 max(24px, env(safe-area-inset-bottom));
+}
+
+.phone-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 4px 18px;
+}
+
+.phone-header img {
+  width: 104px;
+  height: 64px;
+  object-fit: contain;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(1.45rem, 6vw, 2rem);
+  line-height: 1.15;
+}
+
+.phone-header p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.connect-screen,
+.camera-screen {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 48px rgba(31, 41, 55, 0.11);
+}
+
+#connectForm {
+  display: grid;
+  gap: 12px;
+}
+
+#connectForm label {
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+#connectionCode {
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 16px;
+  border: 2px solid #b9cdd8;
+  border-radius: 8px;
+  background: white;
+  color: var(--primary-dark);
+  font-size: clamp(2rem, 12vw, 3.7rem);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.13em;
+  text-align: center;
+}
+
+#connectionCode:focus {
+  border-color: var(--primary);
+  outline: 4px solid rgba(22, 125, 115, 0.17);
+}
+
+.primary-button,
+.secondary-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 18px;
+  border-radius: 8px;
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+.primary-button {
+  border: 2px solid var(--primary);
+  background: var(--primary);
+  color: white;
+  box-shadow: 0 12px 26px rgba(22, 125, 115, 0.2);
+}
+
+.secondary-button {
+  margin-top: 14px;
+  border: 2px solid #cfe0e8;
+  background: #f4f9fb;
+  color: #244758;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.connect-message {
+  min-height: 28px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-weight: 750;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.phone-preview {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border: 4px solid white;
+  border-radius: 8px;
+  background: #17212b;
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
+.phone-preview video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.phone-preview video.mirrored {
+  transform: scaleX(-1);
+}
+
+.phone-countdown {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: none;
+  place-items: center;
+  background: rgba(10, 20, 28, 0.36);
+  color: white;
+  font-size: clamp(4.5rem, 28vw, 8rem);
+  font-weight: 900;
+  text-shadow: 0 8px 26px rgba(0, 0, 0, 0.34);
+}
+
+.phone-countdown.show {
+  display: grid;
+}
+
+.camera-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: white;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.camera-flash.show {
+  animation: camera-flash 0.36s ease-out;
+}
+
+@keyframes camera-flash {
+  0% { opacity: 0; }
+  28% { opacity: 0.96; }
+  100% { opacity: 0; }
+}
+
+.camera-status {
+  min-height: 58px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: #e7f7ee;
+  color: #17613d;
+  font-size: 1.05rem;
+  font-weight: 900;
+  line-height: 1.45;
+  text-align: center;
+}
+
+@media (orientation: landscape) and (max-height: 620px) {
+  .phone-shell {
+    width: min(100% - 24px, 900px);
+  }
+
+  .phone-header {
+    padding-bottom: 10px;
+  }
+
+  .phone-header img {
+    width: 80px;
+    height: 48px;
+  }
+
+  .camera-screen {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.7fr);
+    gap: 16px;
+    align-items: center;
+  }
+
+  .phone-preview {
+    grid-row: span 2;
+    max-height: calc(100vh - 110px);
+    aspect-ratio: 4 / 3;
+  }
+}
