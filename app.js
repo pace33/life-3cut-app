@@ -13,6 +13,9 @@ const REMOTE_API_BASE =
     : "https://aiedue.ddns.net/pic-db/db-api";
 const REMOTE_SESSION_MS = 30 * 60 * 1000;
 const REMOTE_POLL_MS = 1000;
+const PHOTO_DB_NAME = "eeun-photo-gallery";
+const PHOTO_DB_VERSION = 1;
+const PHOTO_STORE_NAME = "photos";
 
 const PHOTO_EFFECTS = {
   bright: {
@@ -131,7 +134,20 @@ const els = {
   biggerStickerButton: document.querySelector("#biggerStickerButton"),
   deleteStickerButton: document.querySelector("#deleteStickerButton"),
   saveButton: document.querySelector("#saveButton"),
+  saveButtonLabel: document.querySelector("#saveButtonLabel"),
   retakeButton: document.querySelector("#retakeButton"),
+  galleryButton: document.querySelector("#galleryButton"),
+  galleryCount: document.querySelector("#galleryCount"),
+  galleryOverlay: document.querySelector("#galleryOverlay"),
+  galleryCloseButton: document.querySelector("#galleryCloseButton"),
+  galleryStatus: document.querySelector("#galleryStatus"),
+  galleryGrid: document.querySelector("#galleryGrid"),
+  galleryEmpty: document.querySelector("#galleryEmpty"),
+  photoViewerOverlay: document.querySelector("#photoViewerOverlay"),
+  photoViewerCloseButton: document.querySelector("#photoViewerCloseButton"),
+  photoViewerImage: document.querySelector("#photoViewerImage"),
+  photoViewerTitle: document.querySelector("#photoViewerTitle"),
+  photoViewerDate: document.querySelector("#photoViewerDate"),
   pairingOverlay: document.querySelector("#pairingOverlay"),
   pairingCloseButton: document.querySelector("#pairingCloseButton"),
   pairingQrImage: document.querySelector("#pairingQrImage"),
@@ -1239,7 +1255,7 @@ function resetAll() {
   }
 }
 
-async function saveCompositePng() {
+async function createCompositePng() {
   const canvas = document.createElement("canvas");
   const width = 900;
   const margin = 70;
@@ -1320,16 +1336,225 @@ async function saveCompositePng() {
   const fileTitle = currentTitle().replace(/[\\/:*?"<>|]/g, "").trim() || "3cut-photo";
   const fileName = `${fileTitle}-${new Date().toISOString().slice(0, 10)}.png`;
   const pngDataUrl = canvas.toDataURL("image/png");
+  return { dataUrl: pngDataUrl, fileName };
+}
 
-  if (window.AndroidApp && typeof window.AndroidApp.saveImage === "function") {
-    window.AndroidApp.saveImage(pngDataUrl, fileName);
-    return;
+let photoDatabasePromise;
+
+function openPhotoDatabase() {
+  if (photoDatabasePromise) return photoDatabasePromise;
+
+  photoDatabasePromise = new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error("이 브라우저에서는 사진 보관함을 사용할 수 없어요."));
+      return;
+    }
+
+    const request = window.indexedDB.open(PHOTO_DB_NAME, PHOTO_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(PHOTO_STORE_NAME)) {
+        database.createObjectStore(PHOTO_STORE_NAME, { keyPath: "id" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("사진 보관함을 열지 못했어요."));
+    request.onblocked = () => reject(new Error("다른 화면에서 사진 보관함을 사용 중이에요."));
+  });
+
+  return photoDatabasePromise;
+}
+
+async function storePhoto(photo) {
+  const database = await openPhotoDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(PHOTO_STORE_NAME, "readwrite");
+    transaction.objectStore(PHOTO_STORE_NAME).put(photo);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error("사진을 저장하지 못했어요."));
+    transaction.onabort = () => reject(transaction.error || new Error("사진 저장이 중단됐어요."));
+  });
+}
+
+async function getStoredPhotos() {
+  const database = await openPhotoDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(PHOTO_STORE_NAME, "readonly");
+    const request = transaction.objectStore(PHOTO_STORE_NAME).getAll();
+    request.onsuccess = () => {
+      const photos = request.result || [];
+      photos.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+      resolve(photos);
+    };
+    request.onerror = () => reject(request.error || new Error("저장한 사진을 불러오지 못했어요."));
+  });
+}
+
+async function deleteStoredPhoto(photoId) {
+  const database = await openPhotoDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(PHOTO_STORE_NAME, "readwrite");
+    transaction.objectStore(PHOTO_STORE_NAME).delete(photoId);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error("사진을 삭제하지 못했어요."));
+  });
+}
+
+function formatPhotoDate(isoDate) {
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return "저장한 사진";
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function updateGalleryCount(count) {
+  els.galleryCount.textContent = String(count);
+  els.galleryCount.setAttribute("aria-label", `저장된 사진 ${count}장`);
+}
+
+function createGalleryCard(photo) {
+  const card = document.createElement("article");
+  card.className = "gallery-card";
+  card.dataset.photoId = photo.id;
+
+  const previewButton = document.createElement("button");
+  previewButton.type = "button";
+  previewButton.className = "gallery-preview-button";
+  previewButton.dataset.galleryView = photo.id;
+  previewButton.setAttribute("aria-label", `${photo.title || "저장한 사진"} 크게 보기`);
+
+  const image = document.createElement("img");
+  image.src = photo.dataUrl;
+  image.alt = photo.title || "저장한 3컷 사진";
+  previewButton.append(image);
+
+  const copy = document.createElement("div");
+  copy.className = "gallery-card-copy";
+  const title = document.createElement("h3");
+  title.textContent = photo.title || "저장한 사진";
+  const date = document.createElement("p");
+  date.textContent = formatPhotoDate(photo.createdAt);
+  copy.append(title, date);
+
+  const actions = document.createElement("div");
+  actions.className = "gallery-card-actions";
+  const viewButton = document.createElement("button");
+  viewButton.type = "button";
+  viewButton.className = "button small secondary";
+  viewButton.dataset.galleryView = photo.id;
+  viewButton.textContent = "크게 보기";
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "button small danger";
+  deleteButton.dataset.galleryDelete = photo.id;
+  deleteButton.textContent = "삭제";
+  actions.append(viewButton, deleteButton);
+
+  card.append(previewButton, copy, actions);
+  return card;
+}
+
+async function renderGallery() {
+  els.galleryStatus.textContent = "저장된 사진을 불러오고 있어요.";
+  els.galleryGrid.textContent = "";
+
+  try {
+    const photos = await getStoredPhotos();
+    updateGalleryCount(photos.length);
+    els.galleryEmpty.hidden = photos.length > 0;
+    els.galleryGrid.hidden = photos.length === 0;
+    photos.forEach((photo) => els.galleryGrid.append(createGalleryCard(photo)));
+    els.galleryStatus.textContent = photos.length
+      ? `저장된 사진이 ${photos.length}장 있어요.`
+      : "저장된 사진이 없어요.";
+    return photos;
+  } catch (error) {
+    console.error(error);
+    els.galleryEmpty.hidden = false;
+    els.galleryGrid.hidden = true;
+    els.galleryStatus.textContent = error.message || "사진 보관함을 열지 못했어요.";
+    return [];
   }
+}
 
-  const link = document.createElement("a");
-  link.download = fileName;
-  link.href = pngDataUrl;
-  link.click();
+async function openGallery() {
+  els.galleryOverlay.hidden = false;
+  await renderGallery();
+  els.galleryCloseButton.focus();
+}
+
+function closeGallery() {
+  els.galleryOverlay.hidden = true;
+  closePhotoViewer(false);
+  els.galleryButton.focus();
+}
+
+async function openPhotoViewer(photoId) {
+  const photos = await getStoredPhotos();
+  const photo = photos.find((item) => item.id === photoId);
+  if (!photo) return;
+  els.photoViewerImage.src = photo.dataUrl;
+  els.photoViewerTitle.textContent = photo.title || "저장한 사진";
+  els.photoViewerDate.textContent = formatPhotoDate(photo.createdAt);
+  els.photoViewerOverlay.hidden = false;
+  els.photoViewerCloseButton.focus();
+}
+
+function closePhotoViewer(returnFocus = true) {
+  els.photoViewerOverlay.hidden = true;
+  els.photoViewerImage.removeAttribute("src");
+  if (returnFocus && !els.galleryOverlay.hidden) els.galleryCloseButton.focus();
+}
+
+async function removeGalleryPhoto(photoId) {
+  if (!window.confirm("이 사진을 삭제할까요?\n삭제한 사진은 다시 복구할 수 없어요.")) return;
+
+  try {
+    await deleteStoredPhoto(photoId);
+    closePhotoViewer(false);
+    await renderGallery();
+    els.galleryStatus.textContent = "사진을 삭제했어요.";
+  } catch (error) {
+    console.error(error);
+    els.galleryStatus.textContent = error.message || "사진을 삭제하지 못했어요.";
+  }
+}
+
+async function savePhotoToGallery() {
+  if (state.photos.length < REQUIRED_SHOTS) return;
+  els.saveButton.disabled = true;
+  els.saveButton.setAttribute("aria-busy", "true");
+  els.saveButtonLabel.textContent = "저장 중...";
+  els.editorStatus.textContent = "완성 사진을 저장하고 있어요";
+
+  try {
+    const composite = await createCompositePng();
+    await storePhoto({
+      id: `${Date.now()}-${randomId(6)}`,
+      title: currentTitle(),
+      createdAt: new Date().toISOString(),
+      fileName: composite.fileName,
+      dataUrl: composite.dataUrl,
+    });
+    els.editorStatus.textContent = "사진 보관함에 저장했어요";
+    await openGallery();
+  } catch (error) {
+    console.error(error);
+    const message = error?.name === "QuotaExceededError"
+      ? "저장 공간이 부족해요. 사진 보기에서 필요 없는 사진을 삭제해 주세요."
+      : error.message || "사진을 저장하지 못했어요.";
+    els.editorStatus.textContent = message;
+    window.alert(message);
+  } finally {
+    els.saveButton.disabled = false;
+    els.saveButton.removeAttribute("aria-busy");
+    els.saveButtonLabel.textContent = "사진 저장";
+  }
 }
 
 function loadImage(src) {
@@ -1443,7 +1668,19 @@ els.pairingCloseButton.addEventListener("click", closePairingOverlay);
 els.cameraFallbackButton.addEventListener("click", () => els.cameraFileInput.click());
 els.cameraFileInput.addEventListener("change", importCameraPhoto);
 els.retakeButton.addEventListener("click", resetAll);
-els.saveButton.addEventListener("click", saveCompositePng);
+els.saveButton.addEventListener("click", savePhotoToGallery);
+els.galleryButton.addEventListener("click", openGallery);
+els.galleryCloseButton.addEventListener("click", closeGallery);
+els.photoViewerCloseButton.addEventListener("click", () => closePhotoViewer());
+els.galleryGrid.addEventListener("click", (event) => {
+  const viewButton = event.target.closest("[data-gallery-view]");
+  if (viewButton) {
+    openPhotoViewer(viewButton.dataset.galleryView).catch(console.error);
+    return;
+  }
+  const deleteButton = event.target.closest("[data-gallery-delete]");
+  if (deleteButton) removeGalleryPhoto(deleteButton.dataset.galleryDelete);
+});
 els.titleInput.addEventListener("input", syncTitleFromInput);
 els.smallerStickerButton.addEventListener("click", () => resizeSelectedSticker(-8));
 els.biggerStickerButton.addEventListener("click", () => resizeSelectedSticker(8));
@@ -1480,7 +1717,14 @@ els.stickerPalette.addEventListener("click", (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !els.pairingOverlay.hidden) closePairingOverlay();
+  if (event.key !== "Escape") return;
+  if (!els.photoViewerOverlay.hidden) {
+    closePhotoViewer();
+  } else if (!els.galleryOverlay.hidden) {
+    closeGallery();
+  } else if (!els.pairingOverlay.hidden) {
+    closePairingOverlay();
+  }
 });
 window.addEventListener("beforeunload", () => {
   stopCamera();
@@ -1495,3 +1739,4 @@ updateCameraDirection();
 loadSavedTitle();
 syncTitleFromInput();
 renderThumbs();
+renderGallery().catch(console.error);

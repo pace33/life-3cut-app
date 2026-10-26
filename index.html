@@ -16,7 +16,7 @@
         location.replace(`https://aiedue.ddns.net${location.pathname}${location.search}${location.hash}`);
       }
     </script>
-    <link rel="stylesheet" href="./styles.css?v=20261023-remote-camera" />
+    <link rel="stylesheet" href="./styles.css?v=20261026-photo-gallery" />
   </head>
   <body>
     <a class="skip-link" href="#main">사진 놀이 바로가기</a>
@@ -39,8 +39,15 @@
             <p>쉽게 찍고, 예쁘게 꾸며요</p>
           </div>
         </div>
-        <div class="progress-pill" id="progressText" aria-live="polite">
-          준비
+        <div class="topbar-actions">
+          <button class="gallery-button" id="galleryButton" type="button">
+            <span class="gallery-button-icon" aria-hidden="true"></span>
+            사진 보기
+            <span class="gallery-count" id="galleryCount" aria-label="저장된 사진 0장">0</span>
+          </button>
+          <div class="progress-pill" id="progressText" aria-live="polite">
+            준비
+          </div>
         </div>
       </header>
 
@@ -195,8 +202,8 @@
 
             <div class="tool-group final-actions">
               <button class="button primary" id="saveButton" type="button">
-                <span aria-hidden="true">⬇</span>
-                PNG 저장
+                <span aria-hidden="true">✓</span>
+                <span id="saveButtonLabel">사진 저장</span>
               </button>
               <button class="button secondary" id="retakeButton" type="button">
                 <span aria-hidden="true">↺</span>
@@ -207,6 +214,37 @@
         </div>
       </section>
     </main>
+
+    <div class="gallery-overlay" id="galleryOverlay" role="dialog" aria-modal="true" aria-labelledby="galleryTitle" hidden>
+      <section class="gallery-panel">
+        <header class="gallery-header">
+          <div>
+            <span class="gallery-eyebrow">내 사진</span>
+            <h2 id="galleryTitle">사진 보관함</h2>
+            <p id="galleryStatus" aria-live="polite">저장된 사진을 불러오고 있어요.</p>
+          </div>
+          <button class="gallery-close" id="galleryCloseButton" type="button" aria-label="사진 보관함 닫기">×</button>
+        </header>
+        <div class="gallery-grid" id="galleryGrid"></div>
+        <div class="gallery-empty" id="galleryEmpty" hidden>
+          <span class="gallery-empty-icon" aria-hidden="true"></span>
+          <strong>아직 저장한 사진이 없어요</strong>
+          <p>사진 3장을 찍고 꾸민 다음<br />‘사진 저장’을 눌러 주세요.</p>
+        </div>
+        <p class="gallery-storage-note">사진은 이 기기의 현재 브라우저에 보관돼요. 브라우저 데이터를 지우면 사진도 함께 지워집니다.</p>
+      </section>
+    </div>
+
+    <div class="photo-viewer-overlay" id="photoViewerOverlay" role="dialog" aria-modal="true" aria-labelledby="photoViewerTitle" hidden>
+      <section class="photo-viewer-panel">
+        <button class="gallery-close photo-viewer-close" id="photoViewerCloseButton" type="button" aria-label="큰 사진 닫기">×</button>
+        <img id="photoViewerImage" alt="저장한 3컷 사진 크게 보기" />
+        <div class="photo-viewer-copy">
+          <h2 id="photoViewerTitle">저장한 사진</h2>
+          <p id="photoViewerDate"></p>
+        </div>
+      </section>
+    </div>
 
     <div class="pairing-overlay" id="pairingOverlay" role="dialog" aria-modal="true" aria-labelledby="pairingTitle" hidden>
       <section class="pairing-panel">
@@ -235,6 +273,6 @@
     </div>
 
     <script src="./qrcode.js?v=1.4.4"></script>
-    <script src="./app.js?v=20261023-remote-camera"></script>
+    <script src="./app.js?v=20261026-photo-gallery"></script>
   </body>
 </html>
