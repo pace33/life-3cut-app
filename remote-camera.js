@@ -17,6 +17,10 @@ const state = {
   captureBusy: false,
   connectedAt: "",
   handledRecordIds: new Set(),
+  captureQueue: [],
+  queuedCommandIds: new Set(),
+  pendingRequestId: "",
+  requestTimer: 0,
 };
 
 const els = {
@@ -33,10 +37,23 @@ const els = {
   cameraStatus: document.querySelector("#cameraStatus"),
   switchButton: document.querySelector("#switchPhoneCamera"),
   switchLabel: document.querySelector("#switchPhoneCameraLabel"),
+  captureButton: document.querySelector("#takePhonePhoto"),
 };
 
 function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function randomId(bytes = 12) {
+  const values = new Uint8Array(bytes);
+  if (window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(values);
+  } else {
+    for (let index = 0; index < values.length; index += 1) {
+      values[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  return [...values].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 function encodeStoragePath(path) {
@@ -138,6 +155,41 @@ async function startCamera() {
   els.switchButton.disabled = false;
 }
 
+function waitForVideoReady() {
+  if (els.video.readyState >= 2 && els.video.videoWidth > 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => finish(new Error("카메라 화면을 준비하지 못했어요.")), 10000);
+    function finish(error) {
+      window.clearTimeout(timeoutId);
+      els.video.removeEventListener("loadeddata", onReady);
+      els.video.removeEventListener("canplay", onReady);
+      error ? reject(error) : resolve();
+    }
+    function onReady() {
+      if (els.video.videoWidth > 0) finish();
+    }
+    els.video.addEventListener("loadeddata", onReady);
+    els.video.addEventListener("canplay", onReady);
+  });
+}
+
+async function ensureCameraReady() {
+  const track = state.stream?.getVideoTracks?.()[0];
+  if (!track || track.readyState !== "live") {
+    await startCamera();
+  } else {
+    await els.video.play();
+  }
+  await waitForVideoReady();
+}
+
+function clearCaptureRequest(enableButton = true) {
+  window.clearTimeout(state.requestTimer);
+  state.requestTimer = 0;
+  state.pendingRequestId = "";
+  if (enableButton) els.captureButton.disabled = state.captureBusy || !state.stream;
+}
+
 async function findSessionByCode(pin) {
   const result = await apiJson(`/items/${REMOTE_COLLECTION}?limit=200&t=${Date.now()}`);
   const sessions = (result.items || [])
@@ -196,7 +248,8 @@ async function connectPhone(event) {
     els.connectScreen.hidden = true;
     els.cameraStage.hidden = false;
     els.headerStatus.textContent = `연결 번호 ${state.pin}`;
-    els.cameraStatus.textContent = "연결됐어요. 스탠바이미에서 촬영 버튼을 눌러 주세요.";
+    els.cameraStatus.textContent = "연결됐어요. 아래 사진 촬영 버튼을 눌러도 돼요.";
+    els.captureButton.disabled = false;
     startPolling();
   } catch (error) {
     console.error(error);
@@ -214,7 +267,7 @@ function startPolling() {
 }
 
 async function pollCommands() {
-  if (!state.sessionId || state.pollBusy || state.captureBusy) return;
+  if (!state.sessionId || state.pollBusy) return;
   state.pollBusy = true;
 
   try {
@@ -224,18 +277,40 @@ async function pollCommands() {
         const item = record.data || {};
         return item.sessionId === state.sessionId && item.pin === state.pin;
       })
-      .reverse();
+      .sort(
+        (a, b) =>
+          new Date(a.data?.createdAt || 0).getTime() - new Date(b.data?.createdAt || 0).getTime(),
+      );
 
     for (const record of records) {
       if (state.handledRecordIds.has(record.id)) continue;
-      state.handledRecordIds.add(record.id);
       const command = record.data || {};
 
+      if (command.kind === "photoBoothPhoneShutterAccepted") {
+        state.handledRecordIds.add(record.id);
+        if (command.requestId === state.pendingRequestId) {
+          els.cameraStatus.textContent = "촬영을 준비하고 있어요.";
+        }
+        continue;
+      }
+
+      if (command.kind === "photoBoothPhoneShutterRejected") {
+        state.handledRecordIds.add(record.id);
+        if (command.requestId === state.pendingRequestId) {
+          clearCaptureRequest(true);
+          els.cameraStatus.textContent = command.message || "지금은 촬영할 수 없어요.";
+        }
+        continue;
+      }
+
       if (command.kind === "photoBoothClosed") {
+        state.handledRecordIds.add(record.id);
         window.clearInterval(state.pollTimer);
         stopCamera();
+        clearCaptureRequest(false);
         els.cameraStatus.textContent = "스탠바이미와 연결이 종료됐어요.";
         els.switchButton.disabled = true;
+        els.captureButton.disabled = true;
         return;
       }
 
@@ -243,15 +318,43 @@ async function pollCommands() {
         command.kind === "photoBoothCapture" &&
         new Date(command.createdAt || 0).getTime() >= new Date(state.connectedAt).getTime()
       ) {
-        await runCapture(command);
-        break;
+        state.handledRecordIds.add(record.id);
+        queueCaptureCommand(command);
+        continue;
       }
+
+
+      state.handledRecordIds.add(record.id);
     }
   } catch (error) {
     console.error(error);
     els.cameraStatus.textContent = "연결을 다시 확인하고 있어요. 잠시 기다려 주세요.";
   } finally {
     state.pollBusy = false;
+  }
+}
+
+function queueCaptureCommand(command) {
+  if (!command.commandId || state.queuedCommandIds.has(command.commandId)) return;
+  state.queuedCommandIds.add(command.commandId);
+  state.captureQueue.push(command);
+  clearCaptureRequest(false);
+  els.captureButton.disabled = true;
+  void drainCaptureQueue();
+}
+
+async function drainCaptureQueue() {
+  if (state.captureBusy) return;
+  const command = state.captureQueue.shift();
+  if (!command) return;
+
+  try {
+    await runCapture(command);
+  } finally {
+    state.queuedCommandIds.delete(command.commandId);
+    if (state.captureQueue.length) {
+      window.setTimeout(() => drainCaptureQueue(), 0);
+    }
   }
 }
 
@@ -297,11 +400,17 @@ function captureBlob() {
 }
 
 async function runCapture(command) {
-  if (state.captureBusy || !state.stream) return;
+  if (state.captureBusy) return;
   state.captureBusy = true;
   els.switchButton.disabled = true;
+  els.captureButton.disabled = true;
 
   try {
+    await ensureCameraReady();
+    postEvent("photoBoothCaptureStarted", {
+      commandId: command.commandId,
+      shotIndex: command.shotIndex,
+    }).catch(() => {});
     const captureAt = Math.max(Number(command.captureAt) || Date.now(), Date.now());
     await showCountdown(captureAt);
     els.countdown.textContent = "찰칵!";
@@ -341,6 +450,29 @@ async function runCapture(command) {
   } finally {
     state.captureBusy = false;
     els.switchButton.disabled = !state.stream;
+    els.captureButton.disabled = !state.stream || state.captureQueue.length > 0;
+  }
+}
+
+async function requestCaptureFromPhone() {
+  if (state.captureBusy || state.pendingRequestId || !state.stream) return;
+  state.pendingRequestId = randomId();
+  els.captureButton.disabled = true;
+  els.cameraStatus.textContent = "스탠바이미에 촬영을 요청하고 있어요.";
+
+  try {
+    await postEvent("photoBoothPhoneShutter", {
+      requestId: state.pendingRequestId,
+    });
+    state.requestTimer = window.setTimeout(() => {
+      if (!state.pendingRequestId) return;
+      clearCaptureRequest(true);
+      els.cameraStatus.textContent = "촬영 요청 시간이 지났어요. 다시 눌러 주세요.";
+    }, 12000);
+  } catch (error) {
+    console.error(error);
+    clearCaptureRequest(true);
+    els.cameraStatus.textContent = "촬영 요청을 보내지 못했어요. 다시 눌러 주세요.";
   }
 }
 
@@ -351,7 +483,7 @@ async function switchCamera() {
   els.cameraStatus.textContent = "카메라 방향을 바꾸고 있어요";
   try {
     await startCamera();
-    els.cameraStatus.textContent = "스탠바이미에서 촬영 버튼을 눌러 주세요.";
+    els.cameraStatus.textContent = "아래 사진 촬영 버튼을 눌러도 돼요.";
   } catch (error) {
     els.cameraStatus.textContent = cameraErrorMessage(error);
   }
@@ -360,7 +492,15 @@ async function switchCamera() {
 els.connectionCode.value = state.pin;
 els.connectForm.addEventListener("submit", connectPhone);
 els.switchButton.addEventListener("click", switchCamera);
+els.captureButton.addEventListener("click", requestCaptureFromPhone);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || els.cameraStage.hidden || state.captureBusy) return;
+  ensureCameraReady().catch((error) => {
+    els.cameraStatus.textContent = cameraErrorMessage(error);
+  });
+});
 window.addEventListener("pagehide", () => {
   window.clearInterval(state.pollTimer);
+  window.clearTimeout(state.requestTimer);
   stopCamera();
 });

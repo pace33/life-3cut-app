@@ -10,7 +10,7 @@
         location.replace(`https://aiedue.ddns.net${location.pathname}${location.search}${location.hash}`);
       }
     </script>
-    <link rel="stylesheet" href="./remote-camera.css?v=20261023" />
+    <link rel="stylesheet" href="./remote-camera.css?v=20261030-camera-fix" />
   </head>
   <body>
     <main class="phone-shell">
@@ -51,13 +51,19 @@
         <div class="camera-status" id="cameraStatus" aria-live="polite">
           카메라를 준비하고 있어요
         </div>
-        <button class="secondary-button" id="switchPhoneCamera" type="button" disabled>
-          <span aria-hidden="true">↻</span>
-          <span id="switchPhoneCameraLabel">후면 카메라</span>
-        </button>
+        <div class="phone-camera-actions">
+          <button class="primary-button phone-capture-button" id="takePhonePhoto" type="button" disabled>
+            <span class="phone-shutter-icon" aria-hidden="true"></span>
+            사진 촬영
+          </button>
+          <button class="secondary-button" id="switchPhoneCamera" type="button" disabled>
+            <span aria-hidden="true">↻</span>
+            <span id="switchPhoneCameraLabel">후면 카메라</span>
+          </button>
+        </div>
       </section>
     </main>
 
-    <script src="./remote-camera.js?v=20261023"></script>
+    <script src="./remote-camera.js?v=20261030-camera-fix"></script>
   </body>
 </html>

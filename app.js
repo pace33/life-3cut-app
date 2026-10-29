@@ -369,9 +369,12 @@ async function openRemotePairing() {
       await createRemoteSession();
     }
 
-    const connectUrl = `${REMOTE_CAMERA_URL}?session=${encodeURIComponent(
-      state.remote.sessionId,
-    )}&code=${encodeURIComponent(state.remote.pin)}`;
+    const connectParams = new URLSearchParams({
+      v: "20261030-camera-fix",
+      session: state.remote.sessionId,
+      code: state.remote.pin,
+    });
+    const connectUrl = `${REMOTE_CAMERA_URL}?${connectParams.toString()}`;
     els.pairingCode.textContent = state.remote.pin;
     const qr = window.qrcode(0, "M");
     qr.addData(connectUrl);
@@ -456,6 +459,7 @@ async function receiveRemotePhoto(event) {
 async function pollRemoteEvents() {
   if (!state.remote.sessionId || state.remote.pollBusy) return;
   state.remote.pollBusy = true;
+  let phoneShutterRequest = null;
 
   try {
     const result = await remoteApiJson(`/items/${REMOTE_COLLECTION}?limit=200&t=${Date.now()}`);
@@ -496,6 +500,30 @@ async function pollRemoteEvents() {
       ) {
         rejectPendingRemotePhoto(new Error(event.message || "휴대폰 촬영에 실패했어요."));
       }
+
+      if (event.kind === "photoBoothPhoneShutter") {
+        const canCapture =
+          !phoneShutterRequest &&
+          state.remote.connected &&
+          !state.isCounting &&
+          !els.cameraScreen.hidden &&
+          state.photos.length < REQUIRED_SHOTS;
+
+        if (canCapture) {
+          phoneShutterRequest = event;
+          setStatus("휴대폰에서 촬영을 눌렀어요. 준비해요");
+          postRemoteEvent("photoBoothPhoneShutterAccepted", {
+            requestId: event.requestId,
+          }).catch(() => {});
+        } else {
+          postRemoteEvent("photoBoothPhoneShutterRejected", {
+            requestId: event.requestId,
+            message: state.photos.length >= REQUIRED_SHOTS
+              ? "3장을 모두 촬영했어요."
+              : "현재는 촬영할 수 없어요. 잠시 뒤 다시 눌러 주세요.",
+          }).catch(() => {});
+        }
+      }
     }
   } catch (error) {
     console.error(error);
@@ -504,6 +532,10 @@ async function pollRemoteEvents() {
     }
   } finally {
     state.remote.pollBusy = false;
+  }
+
+  if (phoneShutterRequest) {
+    window.setTimeout(() => runRemoteCountdownAndCapture(), 0);
   }
 }
 
@@ -526,7 +558,7 @@ function waitForRemotePhoto(commandId) {
     const timeoutId = window.setTimeout(() => {
       if (state.remote.pendingCommandId !== commandId) return;
       rejectPendingRemotePhoto(new Error("사진 전송 시간이 초과됐어요. 다시 찍어 주세요."));
-    }, 30000);
+    }, 45000);
 
     state.remote.pendingCommandId = commandId;
     state.remote.pendingResolve = (photo) => {
@@ -1448,12 +1480,17 @@ function createGalleryCard(photo) {
   viewButton.className = "button small secondary";
   viewButton.dataset.galleryView = photo.id;
   viewButton.textContent = "크게 보기";
+  const downloadButton = document.createElement("button");
+  downloadButton.type = "button";
+  downloadButton.className = "button small primary gallery-download-button";
+  downloadButton.dataset.galleryDownload = photo.id;
+  downloadButton.textContent = "다운로드";
   const deleteButton = document.createElement("button");
   deleteButton.type = "button";
   deleteButton.className = "button small danger";
   deleteButton.dataset.galleryDelete = photo.id;
   deleteButton.textContent = "삭제";
-  actions.append(viewButton, deleteButton);
+  actions.append(viewButton, downloadButton, deleteButton);
 
   card.append(previewButton, copy, actions);
   return card;
@@ -1522,6 +1559,30 @@ async function removeGalleryPhoto(photoId) {
   } catch (error) {
     console.error(error);
     els.galleryStatus.textContent = error.message || "사진을 삭제하지 못했어요.";
+  }
+}
+
+async function downloadGalleryPhoto(photoId) {
+  try {
+    const photos = await getStoredPhotos();
+    const photo = photos.find((item) => item.id === photoId);
+    if (!photo) throw new Error("다운로드할 사진을 찾지 못했어요.");
+
+    const fileName = photo.fileName || `${photo.title || "3cut-photo"}.png`;
+    if (window.AndroidApp && typeof window.AndroidApp.saveImage === "function") {
+      window.AndroidApp.saveImage(photo.dataUrl, fileName);
+    } else {
+      const link = document.createElement("a");
+      link.download = fileName;
+      link.href = photo.dataUrl;
+      document.body.append(link);
+      link.click();
+      link.remove();
+    }
+    els.galleryStatus.textContent = "사진 다운로드를 시작했어요.";
+  } catch (error) {
+    console.error(error);
+    els.galleryStatus.textContent = error.message || "사진을 다운로드하지 못했어요.";
   }
 }
 
@@ -1676,6 +1737,11 @@ els.galleryGrid.addEventListener("click", (event) => {
   const viewButton = event.target.closest("[data-gallery-view]");
   if (viewButton) {
     openPhotoViewer(viewButton.dataset.galleryView).catch(console.error);
+    return;
+  }
+  const downloadButton = event.target.closest("[data-gallery-download]");
+  if (downloadButton) {
+    downloadGalleryPhoto(downloadButton.dataset.galleryDownload);
     return;
   }
   const deleteButton = event.target.closest("[data-gallery-delete]");
