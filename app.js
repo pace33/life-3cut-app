@@ -13,6 +13,9 @@ const REMOTE_API_BASE =
     : "https://aiedue.ddns.net/pic-db/db-api";
 const REMOTE_SESSION_MS = 30 * 60 * 1000;
 const REMOTE_POLL_MS = 1000;
+const REMOTE_PHOTO_FETCH_ATTEMPTS = 7;
+const REMOTE_PHOTO_MIN_BYTES = 4096;
+const REMOTE_PHOTO_DECODE_TIMEOUT_MS = 8000;
 const PHOTO_DB_NAME = "eeun-photo-gallery";
 const PHOTO_DB_VERSION = 1;
 const PHOTO_STORE_NAME = "photos";
@@ -370,7 +373,7 @@ async function openRemotePairing() {
     }
 
     const connectParams = new URLSearchParams({
-      v: "20261030-camera-fix",
+      v: "20261110-photo-verify",
       session: state.remote.sessionId,
       code: state.remote.pin,
     });
@@ -418,6 +421,63 @@ function blobToDataUrl(blob) {
   });
 }
 
+async function validatePhotoDataUrl(dataUrl) {
+  let timeoutId = 0;
+  try {
+    const image = await Promise.race([
+      loadImage(dataUrl),
+      new Promise((_, reject) => {
+        timeoutId = window.setTimeout(
+          () => reject(new Error("사진 확인 시간이 초과됐어요.")),
+          REMOTE_PHOTO_DECODE_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    if (image.naturalWidth < 64 || image.naturalHeight < 64) {
+      throw new Error("사진 크기가 너무 작아요.");
+    }
+    return dataUrl;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+async function fetchRemotePhotoWithRetry(event) {
+  const expectedBytes = Math.max(0, Number(event.bytes) || 0);
+  const minimumBytes = Math.max(
+    REMOTE_PHOTO_MIN_BYTES,
+    expectedBytes ? Math.floor(expectedBytes * 0.9) : 0,
+  );
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= REMOTE_PHOTO_FETCH_ATTEMPTS; attempt += 1) {
+    try {
+      const photoUrl = `${remoteStorageUrl(event.storagePath)}?command=${encodeURIComponent(
+        event.commandId,
+      )}&attempt=${attempt}&t=${Date.now()}`;
+      const response = await fetch(photoUrl, { cache: "no-store" });
+      if (!response.ok) throw new Error("휴대폰 사진을 받지 못했어요.");
+
+      const bytes = await response.arrayBuffer();
+      if (bytes.byteLength < minimumBytes) {
+        throw new Error("사진 파일 전송이 아직 끝나지 않았어요.");
+      }
+
+      const photo = await blobToDataUrl(new Blob([bytes], { type: "image/jpeg" }));
+      return await validatePhotoDataUrl(photo);
+    } catch (error) {
+      lastError = error;
+      if (attempt < REMOTE_PHOTO_FETCH_ATTEMPTS) {
+        setStatus(`사진 파일을 확인하고 있어요 (${attempt}/${REMOTE_PHOTO_FETCH_ATTEMPTS})`);
+        await wait(250 + attempt * 200);
+      }
+    }
+  }
+
+  console.error("휴대폰 사진 검증 실패", lastError);
+  throw new Error("사진 파일을 완전히 받지 못했어요. 같은 사진을 다시 찍어 주세요.");
+}
+
 function blankJpegBlob() {
   return new Promise((resolve) => {
     const canvas = document.createElement("canvas");
@@ -447,13 +507,9 @@ async function scrubRemotePhoto(storagePath) {
 async function receiveRemotePhoto(event) {
   if (!event.storagePath || event.commandId !== state.remote.pendingCommandId) return;
 
-  const response = await fetch(`${remoteStorageUrl(event.storagePath)}?v=${Date.now()}`, {
-    cache: "no-store",
-  });
-  if (!response.ok) throw new Error("휴대폰 사진을 받지 못했어요.");
-  const photo = await blobToDataUrl(await response.blob());
+  const photo = await fetchRemotePhotoWithRetry(event);
   resolvePendingRemotePhoto(photo);
-  scrubRemotePhoto(event.storagePath);
+  void scrubRemotePhoto(event.storagePath);
 }
 
 async function pollRemoteEvents() {

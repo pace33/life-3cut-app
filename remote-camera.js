@@ -4,6 +4,8 @@ const REMOTE_API_BASE =
     ? "/pic-db/db-api"
     : "https://aiedue.ddns.net/pic-db/db-api";
 const POLL_MS = 900;
+const CAPTURE_MIN_BYTES = 4096;
+const PHOTO_UPLOAD_ATTEMPTS = 3;
 
 const query = new URLSearchParams(window.location.search);
 const state = {
@@ -170,6 +172,25 @@ function waitForVideoReady() {
     }
     els.video.addEventListener("loadeddata", onReady);
     els.video.addEventListener("canplay", onReady);
+  });
+}
+
+function waitForFreshVideoFrame() {
+  if (typeof els.video.requestVideoFrameCallback !== "function") {
+    return new Promise((resolve) => {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(
+      () => reject(new Error("카메라의 새 화면을 받지 못했어요.")),
+      3000,
+    );
+    els.video.requestVideoFrameCallback(() => {
+      window.clearTimeout(timeoutId);
+      resolve();
+    });
   });
 }
 
@@ -399,6 +420,96 @@ function captureBlob() {
   });
 }
 
+function validatePhotoBlob(blob) {
+  if (!blob || blob.size < CAPTURE_MIN_BYTES) {
+    return Promise.reject(new Error("사진 파일이 완성되지 않았어요."));
+  }
+
+  const objectUrl = URL.createObjectURL(blob);
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const timeoutId = window.setTimeout(
+      () => finish(new Error("사진 파일 확인 시간이 초과됐어요.")),
+      6000,
+    );
+
+    function finish(error) {
+      window.clearTimeout(timeoutId);
+      URL.revokeObjectURL(objectUrl);
+      image.onload = null;
+      image.onerror = null;
+      error ? reject(error) : resolve(blob);
+    }
+
+    image.onload = () => {
+      if (image.naturalWidth < 64 || image.naturalHeight < 64) {
+        finish(new Error("사진 크기가 너무 작아요."));
+        return;
+      }
+      finish();
+    };
+    image.onerror = () => finish(new Error("사진 파일을 확인하지 못했어요."));
+    image.src = objectUrl;
+  });
+}
+
+async function captureVerifiedBlob() {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      await ensureCameraReady();
+      await waitForFreshVideoFrame();
+      return await validatePhotoBlob(await captureBlob());
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) {
+        els.cameraStatus.textContent = "카메라 화면을 다시 준비하고 있어요";
+        await startCamera();
+      }
+    }
+  }
+  throw lastError || new Error("사진을 만들지 못했어요.");
+}
+
+async function uploadPhotoWithRetry(storagePath, photo) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= PHOTO_UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      const upload = await fetch(
+        `${REMOTE_API_BASE}/storage/files/${encodeStoragePath(storagePath)}?attempt=${attempt}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "image/jpeg" },
+          body: photo,
+        },
+      );
+      if (!upload.ok) throw new Error("사진을 보내지 못했어요.");
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < PHOTO_UPLOAD_ATTEMPTS) {
+        els.cameraStatus.textContent = `사진을 다시 보내고 있어요 (${attempt}/${PHOTO_UPLOAD_ATTEMPTS})`;
+        await wait(350 * attempt);
+      }
+    }
+  }
+  throw lastError || new Error("사진을 보내지 못했어요.");
+}
+
+async function postPhotoEventWithRetry(extra) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= PHOTO_UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      await postEvent("photoBoothPhoto", extra);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < PHOTO_UPLOAD_ATTEMPTS) await wait(300 * attempt);
+    }
+  }
+  throw lastError || new Error("사진 완료 신호를 보내지 못했어요.");
+}
+
 async function runCapture(command) {
   if (state.captureBusy) return;
   state.captureBusy = true;
@@ -417,21 +528,16 @@ async function runCapture(command) {
     els.flash.classList.remove("show");
     void els.flash.offsetWidth;
     els.flash.classList.add("show");
-    const photo = await captureBlob();
+    const photo = await captureVerifiedBlob();
     await wait(260);
     els.countdown.classList.remove("show");
     els.countdown.textContent = "";
     els.cameraStatus.textContent = "사진을 보내고 있어요";
 
     const storagePath = `7/remote/${state.sessionId}/${command.commandId}.jpg`;
-    const upload = await fetch(`${REMOTE_API_BASE}/storage/files/${encodeStoragePath(storagePath)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "image/jpeg" },
-      body: photo,
-    });
-    if (!upload.ok) throw new Error("사진을 보내지 못했어요.");
+    await uploadPhotoWithRetry(storagePath, photo);
 
-    await postEvent("photoBoothPhoto", {
+    await postPhotoEventWithRetry({
       commandId: command.commandId,
       shotIndex: command.shotIndex,
       storagePath,
