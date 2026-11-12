@@ -16,6 +16,10 @@ const REMOTE_POLL_MS = 1000;
 const REMOTE_PHOTO_FETCH_ATTEMPTS = 7;
 const REMOTE_PHOTO_MIN_BYTES = 4096;
 const REMOTE_PHOTO_DECODE_TIMEOUT_MS = 8000;
+const SERVER_GALLERY_KIND = "photoBoothGallery";
+const SERVER_GALLERY_PAGE_SIZE = 200;
+const SERVER_GALLERY_MAX_PAGES = 20;
+const SERVER_SAVE_ATTEMPTS = 3;
 const PHOTO_DB_NAME = "eeun-photo-gallery";
 const PHOTO_DB_VERSION = 1;
 const PHOTO_STORE_NAME = "photos";
@@ -92,6 +96,11 @@ const state = {
   isCounting: false,
   isStartingCamera: false,
   nextStickerId: 1,
+  remoteOriginalPaths: Array(REQUIRED_SHOTS).fill(""),
+  galleryPhotoId: "",
+  galleryCreatedAt: "",
+  galleryStoragePath: "",
+  gallerySavePromise: null,
   remote: {
     sessionId: "",
     pin: "",
@@ -478,38 +487,15 @@ async function fetchRemotePhotoWithRetry(event) {
   throw new Error("사진 파일을 완전히 받지 못했어요. 같은 사진을 다시 찍어 주세요.");
 }
 
-function blankJpegBlob() {
-  return new Promise((resolve) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = 1;
-    canvas.height = 1;
-    const context = canvas.getContext("2d");
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, 1, 1);
-    canvas.toBlob(resolve, "image/jpeg", 0.5);
-  });
-}
-
-async function scrubRemotePhoto(storagePath) {
-  try {
-    const blank = await blankJpegBlob();
-    if (!blank) return;
-    await fetch(remoteStorageUrl(storagePath), {
-      method: "PUT",
-      headers: { "Content-Type": "image/jpeg" },
-      body: blank,
-    });
-  } catch (error) {
-    console.warn("임시 사진 정리 실패", error);
-  }
-}
-
 async function receiveRemotePhoto(event) {
   if (!event.storagePath || event.commandId !== state.remote.pendingCommandId) return;
 
   const photo = await fetchRemotePhotoWithRetry(event);
+  const shotIndex = Number(event.shotIndex);
+  if (Number.isInteger(shotIndex) && shotIndex >= 0 && shotIndex < REQUIRED_SHOTS) {
+    state.remoteOriginalPaths[shotIndex] = event.storagePath;
+  }
   resolvePendingRemotePhoto(photo);
-  void scrubRemotePhoto(event.storagePath);
 }
 
 async function pollRemoteEvents() {
@@ -1055,6 +1041,7 @@ function openEditor() {
   state.selectedCut = 0;
   state.selectedStickerId = null;
   renderEditor();
+  void autoSavePhotoToGallery();
 }
 
 function openCamera() {
@@ -1330,6 +1317,11 @@ function resetAll() {
   state.selectedStickerId = null;
   state.isCounting = false;
   state.nextStickerId = 1;
+  state.remoteOriginalPaths = Array(REQUIRED_SHOTS).fill("");
+  state.galleryPhotoId = "";
+  state.galleryCreatedAt = "";
+  state.galleryStoragePath = "";
+  state.gallerySavePromise = null;
   renderThumbs();
   openCamera();
   els.placeholder.classList.remove("hidden");
@@ -1488,6 +1480,163 @@ async function deleteStoredPhoto(photoId) {
   });
 }
 
+function dataUrlToBlob(dataUrl) {
+  const [header, encoded] = String(dataUrl).split(",", 2);
+  const mimeType = header?.match(/^data:([^;]+);base64$/)?.[1];
+  if (!mimeType || !encoded) throw new Error("저장할 사진 데이터를 확인하지 못했어요.");
+  const binary = window.atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: mimeType });
+}
+
+async function uploadServerFile(storagePath, blob) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= SERVER_SAVE_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(
+        `${remoteStorageUrl(storagePath)}?save=${attempt}&t=${Date.now()}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": blob.type || "image/png" },
+          body: blob,
+        },
+      );
+      if (!response.ok) throw new Error("서버에 사진을 저장하지 못했어요.");
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < SERVER_SAVE_ATTEMPTS) await wait(350 * attempt);
+    }
+  }
+  throw lastError || new Error("서버에 사진을 저장하지 못했어요.");
+}
+
+async function saveServerGalleryPhoto(photo) {
+  const blob = dataUrlToBlob(photo.dataUrl);
+  await uploadServerFile(photo.serverStoragePath, blob);
+  const result = await remoteApiJson(`/items/${REMOTE_COLLECTION}`, {
+    method: "POST",
+    body: JSON.stringify({
+      data: {
+        kind: SERVER_GALLERY_KIND,
+        galleryId: photo.id,
+        title: photo.title,
+        createdAt: photo.createdAt,
+        updatedAt: new Date().toISOString(),
+        fileName: photo.fileName,
+        storagePath: photo.serverStoragePath,
+        originalPaths: photo.originalPaths,
+        bytes: blob.size,
+        pagePath: "/pic/7/",
+      },
+    }),
+  });
+  return result.id || result.item?.id || "";
+}
+
+async function getServerGalleryPhotos() {
+  const records = [];
+  for (let page = 0; page < SERVER_GALLERY_MAX_PAGES; page += 1) {
+    const offset = page * SERVER_GALLERY_PAGE_SIZE;
+    const result = await remoteApiJson(
+      `/items/${REMOTE_COLLECTION}?limit=${SERVER_GALLERY_PAGE_SIZE}&offset=${offset}&t=${Date.now()}`,
+    );
+    const items = result.items || [];
+    records.push(...items.filter((record) => record.data?.kind === SERVER_GALLERY_KIND));
+    if (items.length < SERVER_GALLERY_PAGE_SIZE) break;
+  }
+
+  records.sort((a, b) => {
+    const aDate = a.data?.updatedAt || a.data?.createdAt || "";
+    const bDate = b.data?.updatedAt || b.data?.createdAt || "";
+    return String(bDate).localeCompare(String(aDate));
+  });
+
+  const photos = new Map();
+  records.forEach((record) => {
+    const data = record.data || {};
+    const photoId = String(data.galleryId || "");
+    if (!photoId || !data.storagePath) return;
+    const existing = photos.get(photoId);
+    if (existing) {
+      if (record.id) existing.serverRecordIds.push(record.id);
+      existing.originalPaths = [...new Set([
+        ...(existing.originalPaths || []),
+        ...(Array.isArray(data.originalPaths) ? data.originalPaths : []),
+      ])];
+      return;
+    }
+    photos.set(photoId, {
+      id: photoId,
+      title: data.title || "서버에 저장한 사진",
+      createdAt: data.createdAt || data.updatedAt || "",
+      fileName: data.fileName || `${photoId}.png`,
+      dataUrl: remoteStorageUrl(data.storagePath),
+      serverStoragePath: data.storagePath,
+      originalPaths: Array.isArray(data.originalPaths) ? data.originalPaths : [],
+      serverRecordIds: record.id ? [record.id] : [],
+      serverSaved: true,
+    });
+  });
+  return [...photos.values()];
+}
+
+async function getGalleryPhotos() {
+  const [localResult, serverResult] = await Promise.allSettled([
+    getStoredPhotos(),
+    getServerGalleryPhotos(),
+  ]);
+  if (localResult.status === "rejected" && serverResult.status === "rejected") {
+    throw localResult.reason || serverResult.reason;
+  }
+
+  const merged = new Map();
+  const serverPhotos = serverResult.status === "fulfilled" ? serverResult.value : [];
+  serverPhotos.forEach((photo) => merged.set(photo.id, photo));
+  const localPhotos = localResult.status === "fulfilled" ? localResult.value : [];
+  localPhotos.forEach((photo) => {
+    const serverPhoto = merged.get(photo.id);
+    merged.set(photo.id, {
+      ...(serverPhoto || {}),
+      ...photo,
+      serverStoragePath: photo.serverStoragePath || serverPhoto?.serverStoragePath || "",
+      originalPaths: [...new Set([
+        ...(serverPhoto?.originalPaths || []),
+        ...(photo.originalPaths || []),
+      ])],
+      serverRecordIds: serverPhoto?.serverRecordIds || [],
+      serverSaved: Boolean(photo.serverSaved || serverPhoto),
+    });
+  });
+  return [...merged.values()].sort((a, b) =>
+    String(b.createdAt || "").localeCompare(String(a.createdAt || "")),
+  );
+}
+
+async function deleteServerGalleryPhoto(photo) {
+  const recordIds = [...new Set(photo.serverRecordIds || [])];
+  const storagePaths = [...new Set([
+    photo.serverStoragePath,
+    ...(photo.originalPaths || []),
+  ].filter(Boolean))];
+  const requests = [
+    ...recordIds.map((recordId) => fetch(
+      `${REMOTE_API_BASE}/items/${REMOTE_COLLECTION}/${encodeURIComponent(recordId)}`,
+      { method: "DELETE", cache: "no-store" },
+    ).then((response) => {
+      if (!response.ok && response.status !== 404) throw new Error("서버 기록을 삭제하지 못했어요.");
+    })),
+    ...storagePaths.map((storagePath) => fetch(remoteStorageUrl(storagePath), {
+      method: "DELETE",
+      cache: "no-store",
+    }).then((response) => {
+      if (!response.ok && response.status !== 404) throw new Error("서버 사진을 삭제하지 못했어요.");
+    })),
+  ];
+  await Promise.all(requests);
+}
+
 function formatPhotoDate(isoDate) {
   const date = new Date(isoDate);
   if (Number.isNaN(date.getTime())) return "저장한 사진";
@@ -1557,7 +1706,7 @@ async function renderGallery() {
   els.galleryGrid.textContent = "";
 
   try {
-    const photos = await getStoredPhotos();
+    const photos = await getGalleryPhotos();
     updateGalleryCount(photos.length);
     els.galleryEmpty.hidden = photos.length > 0;
     els.galleryGrid.hidden = photos.length === 0;
@@ -1588,7 +1737,7 @@ function closeGallery() {
 }
 
 async function openPhotoViewer(photoId) {
-  const photos = await getStoredPhotos();
+  const photos = await getGalleryPhotos();
   const photo = photos.find((item) => item.id === photoId);
   if (!photo) return;
   els.photoViewerImage.src = photo.dataUrl;
@@ -1605,10 +1754,16 @@ function closePhotoViewer(returnFocus = true) {
 }
 
 async function removeGalleryPhoto(photoId) {
-  if (!window.confirm("이 사진을 삭제할까요?\n삭제한 사진은 다시 복구할 수 없어요.")) return;
+  if (!window.confirm("이 사진을 기기와 서버에서 삭제할까요?\n삭제한 사진은 다시 복구할 수 없어요.")) return;
 
   try {
-    await deleteStoredPhoto(photoId);
+    const photos = await getGalleryPhotos();
+    const photo = photos.find((item) => item.id === photoId);
+    if (!photo) throw new Error("삭제할 사진을 찾지 못했어요.");
+    await Promise.all([
+      deleteStoredPhoto(photoId),
+      deleteServerGalleryPhoto(photo),
+    ]);
     closePhotoViewer(false);
     await renderGallery();
     els.galleryStatus.textContent = "사진을 삭제했어요.";
@@ -1620,13 +1775,19 @@ async function removeGalleryPhoto(photoId) {
 
 async function downloadGalleryPhoto(photoId) {
   try {
-    const photos = await getStoredPhotos();
+    const photos = await getGalleryPhotos();
     const photo = photos.find((item) => item.id === photoId);
     if (!photo) throw new Error("다운로드할 사진을 찾지 못했어요.");
 
     const fileName = photo.fileName || `${photo.title || "3cut-photo"}.png`;
     if (window.AndroidApp && typeof window.AndroidApp.saveImage === "function") {
-      window.AndroidApp.saveImage(photo.dataUrl, fileName);
+      let imageData = photo.dataUrl;
+      if (!String(imageData).startsWith("data:")) {
+        const response = await fetch(imageData, { cache: "no-store" });
+        if (!response.ok) throw new Error("서버 사진을 다운로드하지 못했어요.");
+        imageData = await blobToDataUrl(await response.blob());
+      }
+      window.AndroidApp.saveImage(imageData, fileName);
     } else {
       const link = document.createElement("a");
       link.download = fileName;
@@ -1642,23 +1803,90 @@ async function downloadGalleryPhoto(photoId) {
   }
 }
 
+function ensureGalleryIdentity() {
+  if (!state.galleryPhotoId) state.galleryPhotoId = `${Date.now()}-${randomId(6)}`;
+  if (!state.galleryCreatedAt) state.galleryCreatedAt = new Date().toISOString();
+  if (!state.galleryStoragePath) state.galleryStoragePath = `7/gallery/${state.galleryPhotoId}.png`;
+  return {
+    id: state.galleryPhotoId,
+    createdAt: state.galleryCreatedAt,
+    storagePath: state.galleryStoragePath,
+  };
+}
+
+async function persistCurrentPhotoEverywhere() {
+  if (state.photos.length < REQUIRED_SHOTS) throw new Error("사진 3장을 먼저 찍어 주세요.");
+  const identity = ensureGalleryIdentity();
+  const composite = await createCompositePng();
+  const photo = {
+    id: identity.id,
+    title: currentTitle(),
+    createdAt: identity.createdAt,
+    updatedAt: new Date().toISOString(),
+    fileName: composite.fileName,
+    dataUrl: composite.dataUrl,
+    serverStoragePath: identity.storagePath,
+    originalPaths: state.remoteOriginalPaths.filter(Boolean),
+    serverSaved: false,
+  };
+
+  const [localResult, serverResult] = await Promise.allSettled([
+    storePhoto(photo),
+    saveServerGalleryPhoto(photo),
+  ]);
+  if (localResult.status === "rejected" && serverResult.status === "rejected") {
+    throw localResult.reason || serverResult.reason || new Error("사진을 저장하지 못했어요.");
+  }
+  if (serverResult.status === "fulfilled") {
+    photo.serverSaved = true;
+    photo.serverRecordIds = serverResult.value ? [serverResult.value] : [];
+    if (localResult.status === "fulfilled") {
+      await storePhoto(photo).catch((error) => console.warn("서버 저장 정보 갱신 실패", error));
+    }
+  }
+  const galleryPhotos = await getGalleryPhotos();
+  updateGalleryCount(galleryPhotos.length);
+  return {
+    localSaved: localResult.status === "fulfilled",
+    serverSaved: serverResult.status === "fulfilled",
+  };
+}
+
+async function autoSavePhotoToGallery() {
+  if (state.photos.length < REQUIRED_SHOTS || state.gallerySavePromise) return;
+  els.saveButton.disabled = true;
+  els.retakeButton.disabled = true;
+  els.editorStatus.textContent = "사진 보관함과 서버에 자동 저장하고 있어요";
+  state.gallerySavePromise = persistCurrentPhotoEverywhere();
+  try {
+    const result = await state.gallerySavePromise;
+    els.editorStatus.textContent = result.serverSaved
+      ? "사진 보관함과 서버에 자동 저장했어요"
+      : "기기 보관함에 저장했어요. 사진 저장을 눌러 서버 저장을 다시 시도해 주세요.";
+  } catch (error) {
+    console.error(error);
+    els.editorStatus.textContent = "자동 저장하지 못했어요. 사진 저장을 눌러 다시 시도해 주세요.";
+  } finally {
+    state.gallerySavePromise = null;
+    els.saveButton.disabled = false;
+    els.retakeButton.disabled = false;
+  }
+}
+
 async function savePhotoToGallery() {
   if (state.photos.length < REQUIRED_SHOTS) return;
+  if (state.gallerySavePromise) await state.gallerySavePromise.catch(() => {});
   els.saveButton.disabled = true;
+  els.retakeButton.disabled = true;
   els.saveButton.setAttribute("aria-busy", "true");
   els.saveButtonLabel.textContent = "저장 중...";
   els.editorStatus.textContent = "완성 사진을 저장하고 있어요";
 
   try {
-    const composite = await createCompositePng();
-    await storePhoto({
-      id: `${Date.now()}-${randomId(6)}`,
-      title: currentTitle(),
-      createdAt: new Date().toISOString(),
-      fileName: composite.fileName,
-      dataUrl: composite.dataUrl,
-    });
-    els.editorStatus.textContent = "사진 보관함에 저장했어요";
+    const result = await persistCurrentPhotoEverywhere();
+    els.editorStatus.textContent = result.serverSaved
+      ? "사진 보관함과 서버에 저장했어요"
+      : "기기 보관함에 저장했어요. 서버 저장은 다시 시도해 주세요.";
     await openGallery();
   } catch (error) {
     console.error(error);
@@ -1669,6 +1897,7 @@ async function savePhotoToGallery() {
     window.alert(message);
   } finally {
     els.saveButton.disabled = false;
+    els.retakeButton.disabled = false;
     els.saveButton.removeAttribute("aria-busy");
     els.saveButtonLabel.textContent = "사진 저장";
   }
